@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVE Information</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<style>
+    body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f9;
+    color: #333;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    width: 80%;
+    margin: 20px auto;
+    text-align: center;
+}
+
+form {
+    margin-bottom: 20px;
+}
+
+input, select {
+    padding: 10px;
+    margin: 5px;
+    width: 200px;
+}
+
+button {
+    padding: 10px 15px;
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+#results {
+    margin-top: 20px;
+    text-align: left;
+}
+
+.cve-item {
+    background-color: #fff;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.pagination-button {
+    padding: 10px;
+    margin: 5px;
+    cursor: pointer;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+}
+
+.pagination-button:hover {
+    background-color: #0056b3;
+}
+.cve-item.low {
+    background-color: #d4edda;
+    border-left: 5px solid #28a745;
+}
+
+.cve-item.medium {
+    background-color: #fff3cd;
+    border-left: 5px solid #ffc107;
+}
+
+.cve-item.high {
+    background-color: #f8d7da;
+    border-left: 5px solid #dc3545;
+}
+
+.cve-item.critical {
+    background-color: #f5c6cb;
+    border-left: 5px solid #721c24;
+}
+
+</style>
+<body>
+    <div class="container">
+        <h1>Latest CVEs</h1>
+        <form id="searchForm">
+            <input type="text" id="cveId" placeholder="CVE ID (e.g., CVE-2021-34527)">
+            <input type="text" id="cpeName" placeholder="CPE Name (e.g., cpe:2.3:o:microsoft:windows_10:1607)">
+            <select id="cvssSeverity">
+                <option value="">Select CVSS Severity</option>
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH">High</option>
+                <option value="CRITICAL">Critical</option>
+            </select>
+            <button type="submit">Search</button>
+        </form>
+
+        <div id="results">
+            <!-- Results will be inserted here -->
+        </div>
+
+        <div id="pagination">
+            <!-- Pagination buttons will be inserted here -->
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+<script>
+document.getElementById('searchForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    fetchCves();
+});
+
+let currentPage = 0;
+
+// Fetch total CVE count first to load the last page
+async function fetchTotalResults() {
+    const response = await fetch('https://services.nvd.nist.gov/rest/json/cves/2.0/?resultsPerPage=1');
+    const data = await response.json();
+    return data.totalResults;
+}
+
+async function fetchCves(startIndex = 0, resultsPerPage = 5) {
+    const cveId = document.getElementById('cveId').value;
+    const cpeName = document.getElementById('cpeName').value;
+    const cvssSeverity = document.getElementById('cvssSeverity').value;
+
+    let url = `https://services.nvd.nist.gov/rest/json/cves/2.0/?resultsPerPage=${resultsPerPage}&startIndex=${startIndex}`;
+
+    if (cveId) url += `&cveId=${cveId}`;
+    if (cpeName) url += `&cpeName=${cpeName}`;
+    if (cvssSeverity) url += `&cvssV3Severity=${cvssSeverity}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        displayResults(data.vulnerabilities);
+        setupPagination(data.totalResults, resultsPerPage, startIndex);
+    } catch (error) {
+        console.error('Error fetching CVEs:', error);
+    }
+}
+
+function displayResults(vulnerabilities) {
+    const resultsContainer = document.getElementById('results');
+    resultsContainer.innerHTML = '';
+
+    vulnerabilities.forEach(vulnerability => {
+        const item = document.createElement('div');
+        item.classList.add('cve-item');
+        
+        // Get the severity of the CVE and assign the correct class
+        const severity = vulnerability.cve.metrics.cvssMetricV2
+            ? vulnerability.cve.metrics.cvssMetricV2[0].baseSeverity
+            : 'UNKNOWN';
+        
+        item.classList.add(severity.toLowerCase());
+
+        item.innerHTML = `
+            <h3>${vulnerability.cve.id}</h3>
+            <p>${vulnerability.cve.descriptions[0].value}</p>
+        `;
+        resultsContainer.appendChild(item);
+    });
+}
+
+function setupPagination(totalResults, resultsPerPage, startIndex) {
+    const paginationContainer = document.getElementById('pagination');
+    paginationContainer.innerHTML = '';
+
+    const totalPages = Math.ceil(totalResults / resultsPerPage);
+    const currentPage = Math.floor(startIndex / resultsPerPage) + 1;
+    const maxVisibleButtons = 5; // Number of buttons to display before and after the current page
+
+    function createButton(page) {
+        const button = document.createElement('button');
+        button.textContent = page;
+        button.classList.add('pagination-button');
+        button.onclick = () => fetchCves((page - 1) * resultsPerPage);
+        paginationContainer.appendChild(button);
+    }
+
+    // Create pagination buttons as per your current logic
+    for (let i = 1; i <= Math.min(3, totalPages); i++) {
+        createButton(i);
+    }
+
+    if (currentPage > maxVisibleButtons + 1) {
+        const ellipsis = document.createElement('span');
+        ellipsis.textContent = '...';
+        paginationContainer.appendChild(ellipsis);
+    }
+
+    const start = Math.max(4, currentPage - maxVisibleButtons);
+    const end = Math.min(totalPages - 3, currentPage + maxVisibleButtons);
+    for (let i = start; i <= end; i++) {
+        createButton(i);
+    }
+
+    if (currentPage < totalPages - maxVisibleButtons - 1) {
+        const ellipsis = document.createElement('span');
+        ellipsis.textContent = '...';
+        paginationContainer.appendChild(ellipsis);
+    }
+
+    for (let i = Math.max(totalPages - 2, 4); i <= totalPages; i++) {
+        if (i > 3) createButton(i);
+    }
+}
+
+// Fetch the latest CVEs on page load, but first load the last page
+fetchTotalResults().then(totalResults => {
+    const lastPageIndex = Math.floor((totalResults - 1) / 5) * 5; // Calculate the last page index
+    fetchCves(lastPageIndex); // Load the last page on first load
+});
+
+</script>
+</html>
