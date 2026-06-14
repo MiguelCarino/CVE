@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CVE Radar Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500;700&family=Red+Hat+Display:wght@700;900&display=swap" rel="stylesheet">
     <style>
         :root {
             --primary: #2563eb;
@@ -16,10 +17,39 @@
 
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
         
-        /* --- Header --- */
-        .header { background-color: #1e293b; color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); z-index: 10; }
-        .header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: 0.5px; }
-        .header-status { font-size: 0.8rem; opacity: 0.8; background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 12px; }
+        /* --- Carino Systems Header --- */
+        .cs-header {
+            height: 70px; flex-shrink: 0;
+            background: linear-gradient(180deg, #0f0f0f 0%, #050505 100%);
+            border-bottom: 1px solid #262626;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; gap: 12px; z-index: 10;
+            font-family: 'IBM Plex Sans', sans-serif;
+        }
+        .cs-left { display: flex; align-items: center; gap: 14px; }
+        .cs-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .cs-page-name {
+            font-family: 'Red Hat Display', sans-serif;
+            font-size: 1.4rem; font-weight: 900; line-height: 1;
+            background: linear-gradient(130deg, #fef08a 0%, #eab308 50%, #b45309 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            white-space: nowrap;
+        }
+        .cs-info { display: flex; align-items: baseline; gap: 10px; border-left: 1px solid #262626; padding-left: 14px; }
+        .cs-info-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; font-weight: 700; color: #fff; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.06em; }
+        .cs-info-desc { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: #666; white-space: nowrap; }
+        .cs-icon-btn {
+            width: 32px; height: 32px; border: 1px solid #262626; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            color: #666; transition: 0.2s; text-decoration: none; background: transparent; cursor: pointer;
+        }
+        .cs-icon-btn:hover { border-color: #eab308; color: #050505; background: #eab308; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(234,179,8,0.15); }
+        .cs-icon-btn svg { width: 15px; height: 15px; }
+        .cs-api-status {
+            font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; text-transform: uppercase;
+            letter-spacing: 0.08em; color: #eab308; border: 1px solid rgba(234,179,8,0.3);
+            padding: 4px 10px; border-radius: 4px; white-space: nowrap;
+        }
 
         .main-wrapper { display: flex; flex: 1; overflow: hidden; }
 
@@ -96,10 +126,27 @@
 </head>
 <body>
 
-    <div class="header">
-        <h1>CVE Radar Pro</h1>
-        <div class="header-status" id="apiStatus">NVD API Connected</div>
-    </div>
+    <header class="cs-header">
+        <div class="cs-left">
+            <a href="https://carino.systems" class="cs-icon-btn" title="Carino Systems">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            </a>
+            <span class="cs-page-name">CVE Radar</span>
+            <div class="cs-info">
+                <span class="cs-info-title">CVE Radar Pro</span>
+                <span class="cs-info-desc">NVD Vulnerability Database</span>
+            </div>
+        </div>
+        <div class="cs-right">
+            <span class="cs-api-status" id="apiStatus">NVD API Connected</span>
+            <a href="https://github.com/MiguelCarino" target="_blank" class="cs-icon-btn" title="GitHub">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+            </a>
+            <a href="https://www.linkedin.com/in/miguelcarino94/" target="_blank" class="cs-icon-btn" title="LinkedIn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg>
+            </a>
+        </div>
+    </header>
 
     <div class="main-wrapper">
         <div class="controls">
