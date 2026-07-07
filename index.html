@@ -76,6 +76,8 @@
         
         .results-header { position: sticky; top: 0; background: var(--bg); padding: 20px 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
         .results-count { font-weight: 600; color: var(--text); }
+        .rh-left { display: flex; align-items: center; gap: 12px; }
+        .api-status { font-size: .78rem; color: #8a8a8a; font-family: monospace; }
         
         .sort-control { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
         .sort-control select { width: auto; padding: 6px 30px 6px 10px; font-size: 0.9rem; }
@@ -182,8 +184,11 @@
             </div>
 
             <div class="results-header">
-                <span class="results-count" id="resultCount">0 Results</span>
-                
+                <div class="rh-left">
+                    <span class="results-count" id="resultCount">0 Results</span>
+                    <span class="api-status" id="apiStatus"></span>
+                </div>
+
                 <div class="sort-control">
                     <label>Sort By:</label>
                     <select id="sortBy" onchange="reSortList()">
