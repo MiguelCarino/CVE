@@ -54,22 +54,43 @@
 
         .main-wrapper { display: flex; flex: 1; overflow: hidden; }
 
-        /* --- Sidebar Controls --- */
-        .controls { width: 320px; background: var(--surface); padding: 25px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 20px; overflow-y: auto; flex-shrink: 0; }
-        
+        /* --- Sidebar Controls — Carino chrome (gold-on-black) ---
+           The results area stays light (it is the readable "document"); only the
+           filter rail adopts the fleet's dark palette, matching netplan/network. */
+        .controls {
+            width: 320px; background: #0b0b0b; color: #a3a3a3;
+            padding: 25px; border-right: 1px solid #262626;
+            display: flex; flex-direction: column; gap: 20px; overflow-y: auto; flex-shrink: 0;
+        }
+
         .control-group { display: flex; flex-direction: column; gap: 6px; }
-        .control-group label { font-size: 0.85rem; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; }
-        
+        .control-group label {
+            font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; font-weight: 700;
+            color: #666; text-transform: uppercase; letter-spacing: 0.08em;
+        }
+
         input, select { padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; background: #fff; width: 100%; box-sizing: border-box; transition: border-color 0.2s; }
         input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
-        
-        button.search-btn { padding: 12px; background-color: var(--primary); color: #fff; border: none; cursor: pointer; border-radius: 6px; font-weight: 600; font-size: 1rem; margin-top: 10px; transition: background 0.2s; }
-        button.search-btn:hover { background-color: #1d4ed8; }
+
+        /* Dark form controls, scoped to the sidebar so the results sort dropdown
+           keeps its light styling. */
+        .controls input, .controls select {
+            background: #0d0d0d; border: 1px solid #262626; color: #f5f5f5;
+            font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem;
+        }
+        .controls input::placeholder { color: #666; }
+        .controls input:focus, .controls select:focus {
+            border-color: #eab308; box-shadow: 0 0 0 3px rgba(234,179,8,0.12);
+        }
+        .controls select option { background: #111; color: #f5f5f5; }
+
+        button.search-btn { padding: 12px; background-color: #eab308; color: #050505; border: none; cursor: pointer; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.8rem; margin-top: 10px; transition: 0.2s; }
+        button.search-btn:hover { background-color: #fbbf24; box-shadow: 0 4px 14px rgba(234,179,8,0.22); }
 
         /* Quick Links (Tags) */
         .quick-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
-        .tag { background: #eff6ff; color: var(--primary); padding: 5px 10px; border-radius: 15px; font-size: 0.8rem; font-weight: 500; text-decoration: none; cursor: pointer; border: 1px solid #dbeafe; transition: all 0.2s; }
-        .tag:hover { background: var(--primary); color: white; border-color: var(--primary); }
+        .tag { background: #0d0d0d; color: #a3a3a3; padding: 5px 10px; border-radius: 15px; font-size: 0.8rem; font-weight: 500; text-decoration: none; cursor: pointer; border: 1px solid #262626; transition: all 0.2s; }
+        .tag:hover { background: rgba(234,179,8,0.08); color: #eab308; border-color: #eab308; }
 
         /* --- Results Area --- */
         .results-area { flex: 1; padding: 0 30px 30px 30px; overflow-y: auto; position: relative; background-color: var(--bg); }
@@ -116,11 +137,36 @@
         .spinner { width: 50px; height: 50px; border: 5px solid #e2e8f0; border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        @media (max-width: 800px) {
-            .main-wrapper { flex-direction: column; overflow-y: auto; }
-            .controls { width: 100%; border-right: none; border-bottom: 1px solid var(--border); padding: 20px; }
+        /* Mobile drawer helpers — hidden until the breakpoint (see inline script). */
+        #cveMenuBtn {
+            display: none; flex-shrink: 0;
+            width: 38px; height: 38px; align-items: center; justify-content: center;
+            background: transparent; border: 1px solid #262626; border-radius: 6px;
+            color: #eab308; font-size: 1.15rem; line-height: 1; cursor: pointer; transition: 0.2s;
+        }
+        #cveMenuBtn:hover { border-color: #eab308; background: rgba(234,179,8,0.08); }
+        #cveScrim { display: none; }
+
+        @media (max-width: 900px) {
+            #cveMenuBtn { display: flex; }
+
+            /* The filter rail becomes an off-canvas drawer under the 60px navbar. */
+            .controls {
+                position: fixed; top: 60px; left: 0; bottom: 0;
+                width: min(88vw, 340px); z-index: 2147482000;
+                transform: translateX(-100%); transition: transform 0.25s ease;
+                box-shadow: 0 0 44px rgba(0, 0, 0, 0.6);
+            }
+            .controls.open { transform: translateX(0); }
+
+            #cveScrim {
+                display: block; position: fixed; inset: 60px 0 0 0;
+                background: rgba(0, 0, 0, 0.55); opacity: 0; pointer-events: none;
+                transition: opacity 0.25s ease; z-index: 2147481000;
+            }
+            #cveScrim.open { opacity: 1; pointer-events: auto; }
+
             .results-area { padding: 15px; }
-            body { height: auto; }
             .cve-item { grid-template-columns: 1fr; gap: 10px; }
             .score-box { flex-direction: row; border-left: none; border-top: 1px solid var(--border); padding: 10px 0 0 0; justify-content: flex-start; gap: 10px; }
             .score-val { font-size: 1.5rem; }
@@ -434,5 +480,53 @@
     }
 </script>
 <script src="carino-navbar.js" data-app="CVE" defer></script>
+<script>
+/* Mobile: turn the filter rail into a ☰ drawer opened from the shared navbar.
+   CVE has no navbar action controls, so the drawer just holds the filters; it
+   auto-closes when a quick-tag or Search is tapped so the results show through.
+   The ☰ is injected into the injected navbar (carino-navbar.js), so this waits
+   for that bar to mount. Same pattern as netplan/network.carino.systems. */
+(function () {
+    'use strict';
+    var MQ = window.matchMedia('(max-width: 900px)');
+    var controls = document.querySelector('.controls');
+    if (!controls) return;
+
+    var scrim = document.createElement('div');
+    scrim.id = 'cveScrim';
+    document.body.appendChild(scrim);
+
+    function open() { controls.classList.add('open'); scrim.classList.add('open'); }
+    function close() { controls.classList.remove('open'); scrim.classList.remove('open'); }
+    function toggle() { controls.classList.contains('open') ? close() : open(); }
+
+    scrim.addEventListener('click', close);
+    window.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+    // Running a search from inside the drawer should reveal the results behind it.
+    controls.addEventListener('click', function (e) {
+        if (MQ.matches && e.target.closest('.tag, .search-btn')) close();
+    });
+
+    function addBtn() {
+        var nav = document.getElementById('carinoNav');
+        if (!nav) return false;
+        if (document.getElementById('cveMenuBtn')) return true;
+        var b = document.createElement('button');
+        b.id = 'cveMenuBtn'; b.type = 'button';
+        b.setAttribute('aria-label', 'Toggle filters');
+        b.textContent = '☰'; // ☰
+        b.addEventListener('click', function (e) { e.stopPropagation(); toggle(); });
+        var left = nav.querySelector('.cn-left');
+        if (left) left.insertBefore(b, left.firstChild); else nav.insertBefore(b, nav.firstChild);
+        return true;
+    }
+    if (!addBtn()) {
+        var n = 0, iv = setInterval(function () { if (addBtn() || ++n > 40) clearInterval(iv); }, 50);
+    }
+    var onChange = function () { if (!MQ.matches) close(); };
+    if (MQ.addEventListener) MQ.addEventListener('change', onChange);
+    else if (MQ.addListener) MQ.addListener(onChange);
+})();
+</script>
 </body>
 </html>
