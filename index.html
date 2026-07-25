@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="fonts/carino-fonts.css">
     <style>
         :root {
-            --primary: #2563eb;
+            --primary: #b45309;
             --bg: #f8fafc;
             --surface: #ffffff;
             --text: #334155;
@@ -16,41 +16,7 @@
             --border: #e2e8f0;
         }
 
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
-        
-        /* --- Carino Systems Header --- */
-        .cs-header {
-            height: 70px; flex-shrink: 0;
-            background: linear-gradient(180deg, #0f0f0f 0%, #050505 100%);
-            border-bottom: 1px solid #262626;
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 0 24px; gap: 12px; z-index: 10;
-            font-family: 'IBM Plex Sans', sans-serif;
-        }
-        .cs-left { display: flex; align-items: center; gap: 14px; }
-        .cs-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-        .cs-page-name {
-            font-family: 'Red Hat Display', sans-serif;
-            font-size: 1.4rem; font-weight: 900; line-height: 1;
-            background: linear-gradient(130deg, #fef08a 0%, #eab308 50%, #b45309 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-            white-space: nowrap;
-        }
-        .cs-info { display: flex; align-items: baseline; gap: 10px; border-left: 1px solid #262626; padding-left: 14px; }
-        .cs-info-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; font-weight: 700; color: #fff; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.06em; }
-        .cs-info-desc { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: #666; white-space: nowrap; }
-        .cs-icon-btn {
-            width: 32px; height: 32px; border: 1px solid #262626; border-radius: 4px;
-            display: flex; align-items: center; justify-content: center;
-            color: #666; transition: 0.2s; text-decoration: none; background: transparent; cursor: pointer;
-        }
-        .cs-icon-btn:hover { border-color: #eab308; color: #050505; background: #eab308; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(234,179,8,0.15); }
-        .cs-icon-btn svg { width: 15px; height: 15px; }
-        .cs-api-status {
-            font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; text-transform: uppercase;
-            letter-spacing: 0.08em; color: #eab308; border: 1px solid rgba(234,179,8,0.3);
-            padding: 4px 10px; border-radius: 4px; white-space: nowrap;
-        }
+        body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
 
         .main-wrapper { display: flex; flex: 1; overflow: hidden; }
 
@@ -70,7 +36,7 @@
         }
 
         input, select { padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; background: #fff; width: 100%; box-sizing: border-box; transition: border-color 0.2s; }
-        input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(234,179,8,0.15); }
 
         /* Dark form controls, scoped to the sidebar so the results sort dropdown
            keeps its light styling. */
@@ -98,7 +64,7 @@
         .results-header { position: sticky; top: 0; background: var(--bg); padding: 20px 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
         .results-count { font-weight: 600; color: var(--text); }
         .rh-left { display: flex; align-items: center; gap: 12px; }
-        .api-status { font-size: .78rem; color: #8a8a8a; font-family: monospace; }
+        .api-status { font-size: .78rem; color: var(--text-light); font-family: 'IBM Plex Mono', monospace; }
         
         .sort-control { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
         .sort-control select { width: auto; padding: 6px 30px 6px 10px; font-size: 0.9rem; }
@@ -514,7 +480,7 @@
         var b = document.createElement('button');
         b.id = 'cveMenuBtn'; b.type = 'button';
         b.setAttribute('aria-label', 'Toggle filters');
-        b.textContent = '☰'; // ☰
+        b.textContent = '☰';
         b.addEventListener('click', function (e) { e.stopPropagation(); toggle(); });
         var left = nav.querySelector('.cn-left');
         if (left) left.insertBefore(b, left.firstChild); else nav.insertBefore(b, nav.firstChild);
