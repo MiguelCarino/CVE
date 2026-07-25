@@ -22,7 +22,7 @@
 
         /* --- Sidebar Controls — Carino chrome (gold-on-black) ---
            The results area stays light (it is the readable "document"); only the
-           filter rail adopts the fleet's dark palette, matching netplan/network. */
+           filter rail adopts the fleet's dark palette, matching netplan/topo. */
         .controls {
             width: 320px; background: #0b0b0b; color: #a3a3a3;
             padding: 25px; border-right: 1px solid #262626;
@@ -451,7 +451,7 @@
    CVE has no navbar action controls, so the drawer just holds the filters; it
    auto-closes when a quick-tag or Search is tapped so the results show through.
    The ☰ is injected into the injected navbar (carino-navbar.js), so this waits
-   for that bar to mount. Same pattern as netplan/network.carino.systems. */
+   for that bar to mount. Same pattern as netplan/topo.carino.systems. */
 (function () {
     'use strict';
     var MQ = window.matchMedia('(max-width: 900px)');
