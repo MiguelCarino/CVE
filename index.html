@@ -144,7 +144,7 @@
     <div class="main-wrapper">
         <div class="controls">
             <div class="control-group">
-                <label>Quick Search</label>
+                <label data-i18n>Quick Search</label>
                 <div class="quick-links">
                     <span class="tag" onclick="quickSearch('Linux Kernel')">Linux Kernel</span>
                     <span class="tag" onclick="quickSearch('Rust')">Rust</span>
@@ -158,35 +158,35 @@
 
             <form id="searchForm">
                 <div class="control-group" style="margin-top: 10px;">
-                    <label>Keyword</label>
+                    <label data-i18n>Keyword</label>
                     <input type="text" id="searchTerm" placeholder="Product, Vendor, or Keyword...">
                 </div>
 
                 <div class="control-group" style="margin-top: 15px;">
-                    <label>Timeframe</label>
+                    <label data-i18n>Timeframe</label>
                     <select id="timeSelect">
-                        <option value="7">Last 7 Days</option>
-                        <option value="30">Last 30 Days</option>
-                        <option value="90" selected>Last 90 Days</option>
-                        <option value="2026">Year 2026</option>
-                        <option value="2025">Year 2025</option>
-                        <option value="2024">Year 2024</option>
-                        <option value="all">All Time (Slow)</option>
+                        <option value="7" data-i18n>Last 7 Days</option>
+                        <option value="30" data-i18n>Last 30 Days</option>
+                        <option value="90" selected data-i18n>Last 90 Days</option>
+                        <option value="2026" data-i18n>Year 2026</option>
+                        <option value="2025" data-i18n>Year 2025</option>
+                        <option value="2024" data-i18n>Year 2024</option>
+                        <option value="all" data-i18n>All Time (Slow)</option>
                     </select>
                 </div>
 
                 <div class="control-group" style="margin-top: 15px;">
-                    <label>Minimum Severity</label>
+                    <label data-i18n>Minimum Severity</label>
                     <select id="cvssSeverity">
-                        <option value="">Any (Includes Unrated)</option>
-                        <option value="LOW">Low+</option>
-                        <option value="MEDIUM">Medium+</option>
-                        <option value="HIGH">High+</option>
-                        <option value="CRITICAL">Critical</option>
+                        <option value="" data-i18n>Any (Includes Unrated)</option>
+                        <option value="LOW" data-i18n>Low+</option>
+                        <option value="MEDIUM" data-i18n>Medium+</option>
+                        <option value="HIGH" data-i18n>High+</option>
+                        <option value="CRITICAL" data-i18n>Critical</option>
                     </select>
                 </div>
 
-                <button type="submit" class="search-btn">Search Database</button>
+                <button type="submit" class="search-btn" data-i18n>Search Database</button>
             </form>
         </div>
 
@@ -197,17 +197,17 @@
 
             <div class="results-header">
                 <div class="rh-left">
-                    <span class="results-count" id="resultCount">0 Results</span>
+                    <span class="results-count" id="resultCount" data-i18n>0 Results</span>
                     <span class="api-status" id="apiStatus"></span>
                 </div>
 
                 <div class="sort-control">
-                    <label>Sort By:</label>
+                    <label data-i18n>Sort By:</label>
                     <select id="sortBy" onchange="reSortList()">
-                        <option value="date-new">Date (Newest First)</option>
-                        <option value="date-old">Date (Oldest First)</option>
-                        <option value="score-high">Score (High to Low)</option>
-                        <option value="score-low">Score (Low to High)</option>
+                        <option value="date-new" data-i18n>Date (Newest First)</option>
+                        <option value="date-old" data-i18n>Date (Oldest First)</option>
+                        <option value="score-high" data-i18n>Score (High to Low)</option>
+                        <option value="score-low" data-i18n>Score (Low to High)</option>
                     </select>
                 </div>
             </div>
@@ -263,7 +263,7 @@
         const status = document.getElementById('apiStatus');
         
         loader.style.display = 'flex';
-        status.textContent = "Fetching...";
+        status.textContent = t("Fetching...");
         
         const keyword = document.getElementById('searchTerm').value.trim();
         const severity = document.getElementById('cvssSeverity').value;
@@ -287,16 +287,16 @@
             // Initial Sort (Newest First) and Render
             reSortList();
 
-            status.textContent = "NVD API Connected";
+            status.textContent = t("NVD API Connected");
 
         } catch (err) {
             console.error(err);
             document.getElementById('resultsList').innerHTML = `
                 <div style="text-align:center; padding: 40px; color: #ef4444;">
-                    <h3>Connection Error</h3>
-                    <p>Could not retrieve data from NIST. Please wait a moment and try again.</p>
+                    <h3>${t('Connection Error')}</h3>
+                    <p>${t('Could not retrieve data from NIST. Please wait a moment and try again.')}</p>
                 </div>`;
-            status.textContent = "API Error";
+            status.textContent = t("API Error");
         } finally {
             loader.style.display = 'none';
         }
@@ -383,10 +383,10 @@
         const countSpan = document.getElementById('resultCount');
         
         list.innerHTML = '';
-        countSpan.textContent = `${currentVulnerabilities.length} Results Shown`;
+        countSpan.textContent = `${currentVulnerabilities.length} ${t('Results Shown')}`;
 
         if (currentVulnerabilities.length === 0) {
-            list.innerHTML = `<div style="text-align:center; padding:40px; color:#64748b;">No matching CVEs found.</div>`;
+            list.innerHTML = `<div style="text-align:center; padding:40px; color:#64748b;">${t('No matching CVEs found.')}</div>`;
             return;
         }
 
@@ -398,7 +398,7 @@
 
             const cardClass = isUnrated ? 'pending' : meta.className;
             const scoreDisplay = isUnrated ? '--' : meta.score;
-            const labelDisplay = isUnrated ? 'PENDING' : meta.label;
+            const labelDisplay = isUnrated ? t('PENDING') : meta.label;
 
             const div = document.createElement('div');
             div.className = `cve-item ${cardClass}`;
@@ -408,10 +408,10 @@
                         <a href="https://nvd.nist.gov/vuln/detail/${cve.id}" target="_blank" class="cve-id">${cve.id}</a>
                         <span class="badge badge-status">${status}</span>
                     </div>
-                    <p class="cve-desc" onclick="this.classList.toggle('expanded')" title="Click to expand">${cve.descriptions[0].value}</p>
+                    <p class="cve-desc" onclick="this.classList.toggle('expanded')" title="${t('Click to expand')}">${cve.descriptions[0].value}</p>
                     <div class="cve-meta">
-                        <span class="meta-item">📅 Published: ${new Date(cve.published).toLocaleDateString()}</span>
-                        <span class="meta-item">🕒 Updated: ${new Date(cve.lastModified).toLocaleDateString()}</span>
+                        <span class="meta-item">📅 ${t('Published:')} ${new Date(cve.published).toLocaleDateString()}</span>
+                        <span class="meta-item">🕒 ${t('Updated:')} ${new Date(cve.lastModified).toLocaleDateString()}</span>
                     </div>
                 </div>
                 <div class="score-box">
@@ -447,6 +447,7 @@
 </script>
 <script src="carino-navbar.js" data-app="CVE" defer></script>
 <script src="carino-lang.js" defer></script>
+<script src="i18n.js" defer></script>
 <script>
 /* Mobile: turn the filter rail into a ☰ drawer opened from the shared navbar.
    CVE has no navbar action controls, so the drawer just holds the filters; it
