@@ -8,6 +8,10 @@
 
 const I18N = {
     es: {
+        'Late shift.': 'Turno nocturno.',
+        'Good morning.': 'Buenos días.',
+        'Good afternoon.': 'Buenas tardes.',
+        'Good evening.': 'Buenas noches.',
         // Sidebar filters
         'Quick Search': 'Búsqueda rápida',
         'Keyword': 'Palabra clave',
@@ -49,6 +53,10 @@ const I18N = {
         'Click to expand': 'Haz clic para expandir',
     },
     'pt-BR': {
+        'Late shift.': 'Turno da noite.',
+        'Good morning.': 'Bom dia.',
+        'Good afternoon.': 'Boa tarde.',
+        'Good evening.': 'Boa noite.',
         'Quick Search': 'Busca rápida',
         'Keyword': 'Palavra-chave',
         'Product, Vendor, or Keyword...': 'Produto, fornecedor ou palavra-chave...',
@@ -86,6 +94,10 @@ const I18N = {
         'Click to expand': 'Clique para expandir',
     },
     ja: {
+        'Late shift.': '夜勤お疲れさま。',
+        'Good morning.': 'おはようございます。',
+        'Good afternoon.': 'こんにちは。',
+        'Good evening.': 'こんばんは。',
         'Quick Search': 'クイック検索',
         'Keyword': 'キーワード',
         'Product, Vendor, or Keyword...': '製品名・ベンダー名・キーワード...',
@@ -123,6 +135,10 @@ const I18N = {
         'Click to expand': 'クリックで全文表示',
     },
     ru: {
+        'Late shift.': 'Ночная смена.',
+        'Good morning.': 'Доброе утро.',
+        'Good afternoon.': 'Добрый день.',
+        'Good evening.': 'Добрый вечер.',
         'Quick Search': 'Быстрый поиск',
         'Keyword': 'Ключевое слово',
         'Product, Vendor, or Keyword...': 'Продукт, вендор или ключевое слово...',
