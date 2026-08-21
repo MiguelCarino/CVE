@@ -7,8 +7,14 @@
     <title>CVE Radar Pro</title>
     <link rel="stylesheet" href="fonts/carino-fonts.css">
     <style>
+        /* Two golds, and on purpose. --primary is the gold that stays legible
+           as text on the light results column (it is where Branding's
+           --gold-text gradient ends); --accent is Branding's Sharp Gold and
+           belongs only on the dark rail. Focus rings now match the surface
+           they sit on instead of mixing the two. */
         :root {
             --primary: #b45309;
+            --accent: #eab308;
             --bg: #f8fafc;
             --surface: #ffffff;
             --text: #334155;
@@ -36,7 +42,7 @@
         }
 
         input, select { padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; background: #fff; width: 100%; box-sizing: border-box; transition: border-color 0.2s; }
-        input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(234,179,8,0.15); }
+        input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(180,83,9,0.15); }
 
         /* Dark form controls, scoped to the sidebar so the results sort dropdown
            keeps its light styling. */
@@ -133,61 +139,124 @@
             #cveScrim.open { opacity: 1; pointer-events: auto; }
 
             .results-area { padding: 15px; }
+            .results-header { flex-wrap: wrap; gap: 10px; }
+            .rh-right { flex-wrap: wrap; }
             .cve-item { grid-template-columns: 1fr; gap: 10px; }
             .score-box { flex-direction: row; border-left: none; border-top: 1px solid var(--border); padding: 10px 0 0 0; justify-content: flex-start; gap: 10px; }
             .score-val { font-size: 1.5rem; }
         }
+
+        /* --- Additions: honest counts, real affordances, keyboard access --- */
+
+        .hint { margin: 6px 0 0; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; line-height: 1.5; color: #666; }
+
+        /* Provenance: where the data came from and when. Pinned to the bottom
+           of the rail — a number without a retrieval time is a rumour. */
+        .prov { margin-top: auto; padding-top: 16px; border-top: 1px solid #1a1a1a; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: #555; }
+
+        /* Quick tags are <button> now, so they are reachable by keyboard. */
+        button.tag { font-family: inherit; }
+        button.tag:focus-visible, .btn-ghost:focus-visible, .desc-toggle:focus-visible,
+        .load-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        .rh-right { display: flex; align-items: center; gap: 10px; }
+        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-light); font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 5px 9px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        .btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
+        .btn-copy { margin-left: auto; }
+
+        .desc-toggle { margin-top: 8px; padding: 0; background: none; border: none; color: var(--primary); font-family: inherit; font-size: 0.8rem; cursor: pointer; }
+        .desc-toggle:hover { text-decoration: underline; }
+
+        .cve-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .chip { display: inline-block; padding: 3px 8px; border: 1px solid var(--border); border-radius: 5px; background: #f8fafc; color: var(--text-light); font-size: 0.7rem; text-decoration: none; }
+        .chip.mono { font-family: 'IBM Plex Mono', monospace; }
+        a.chip:hover { border-color: var(--primary); color: var(--primary); }
+
+        .load-more { display: block; width: 100%; margin: 5px 0 30px; padding: 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; color: var(--text-light); font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; cursor: pointer; transition: 0.2s; }
+        .load-more:hover { border-color: var(--primary); color: var(--primary); }
+
+        .empty { padding: 40px; text-align: center; color: var(--text-light); }
+        .empty.error { color: #ef4444; }
+
+        /* --- Quick-views dialog. Dark, because it is a control surface like
+               the rail, not part of the readable results document. --- */
+        .qv-more { font-weight: 700; letter-spacing: 0.1em; }
+        .qv-dialog { width: min(560px, 92vw); max-height: 84vh; padding: 0; border: 1px solid #262626; border-radius: 12px; background: #0b0b0b; color: #a3a3a3; }
+        .qv-dialog::backdrop { background: rgba(0,0,0,0.6); backdrop-filter: blur(2px); }
+        .qv-inner { display: flex; flex-direction: column; gap: 14px; max-height: 84vh; padding: 22px; }
+        .qv-head { display: flex; align-items: center; gap: 12px; }
+        .qv-head h2 { margin: 0; font-family: 'Red Hat Display', 'IBM Plex Sans', sans-serif; font-size: 1.2rem; color: #f5f5f5; }
+        .qv-x { margin-left: auto; width: 30px; height: 30px; background: transparent; border: 1px solid #262626; border-radius: 6px; color: #a3a3a3; font-size: 1.1rem; line-height: 1; cursor: pointer; }
+        .qv-x:hover { border-color: #eab308; color: #eab308; }
+        .qv-sub { margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; line-height: 1.7; color: #666; }
+        .qv-row-form { display: flex; gap: 8px; }
+        .qv-row-form input { flex: 1; }
+        .qv-dialog input { padding: 10px 12px; background: #0d0d0d; border: 1px solid #262626; border-radius: 6px; color: #f5f5f5; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; width: 100%; box-sizing: border-box; }
+        .qv-dialog input::placeholder { color: #555; }
+        .qv-dialog input:focus { outline: none; border-color: #eab308; box-shadow: 0 0 0 3px rgba(234,179,8,0.12); }
+        .qv-dialog .btn-ghost { border-color: #262626; color: #a3a3a3; white-space: nowrap; }
+        .qv-dialog .btn-ghost:hover { border-color: #eab308; color: #eab308; }
+        .qv-list { flex: 1; overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
+        .qv-group { margin: 14px 0 4px; font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: #555; }
+        .qv-group:first-child { margin-top: 0; }
+        .qv-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid transparent; border-radius: 8px; }
+        .qv-item:hover { background: rgba(234,179,8,0.06); border-color: #262626; }
+        .qv-go { flex: 1; min-width: 0; padding: 0; background: none; border: none; text-align: left; color: #f5f5f5; font-family: inherit; font-size: 0.88rem; cursor: pointer; }
+        .qv-go small { display: block; margin-top: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .qv-act { padding: 2px 5px; background: none; border: none; color: #555; font-size: 0.95rem; line-height: 1; cursor: pointer; }
+        .qv-act:hover, .qv-act.on { color: #eab308; }
+        .qv-none { margin: 20px 0; text-align: center; font-size: 0.82rem; color: #555; }
+        .qv-foot { display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid #1a1a1a; }
+        .qv-note { font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; line-height: 1.5; color: #555; }
+        .qv-dialog .btn-ghost:focus-visible, .qv-x:focus-visible, .qv-go:focus-visible,
+        .qv-act:focus-visible { outline: 2px solid #eab308; outline-offset: 2px; }
     </style>
 </head>
 <body>
 
     <div class="main-wrapper">
         <div class="controls">
+            <!-- Five pinned chips and a "⋯". Everything else is in the dialog,
+                 so the catalogue can grow without the sidebar growing. -->
             <div class="control-group">
-                <label data-i18n>Quick Search</label>
-                <div class="quick-links">
-                    <span class="tag" onclick="quickSearch('Linux Kernel')">Linux Kernel</span>
-                    <span class="tag" onclick="quickSearch('Rust')">Rust</span>
-                    <span class="tag" onclick="quickSearch('Windows 11')">Windows 11</span>
-                    <span class="tag" onclick="quickSearch('Android')">Android</span>
-                    <span class="tag" onclick="quickSearch('Fortinet')">Fortinet</span>
-                    <span class="tag" onclick="quickSearch('Chrome')">Chrome</span>
-                    <span class="tag" onclick="quickSearch('Ivanti')">Ivanti</span>
-                </div>
+                <label data-i18n>Quick Views</label>
+                <div class="quick-links" id="quickChips"></div>
             </div>
 
             <form id="searchForm">
                 <div class="control-group" style="margin-top: 10px;">
-                    <label data-i18n>Keyword</label>
+                    <label for="searchTerm" data-i18n>Keyword</label>
                     <input type="text" id="searchTerm" placeholder="Product, Vendor, or Keyword...">
                 </div>
 
+                <!-- Years are injected by buildYearOptions(): the list used to be
+                     hardcoded to three, and it reached back only as far as whoever
+                     last edited it remembered to. -->
                 <div class="control-group" style="margin-top: 15px;">
-                    <label data-i18n>Timeframe</label>
+                    <label for="timeSelect" data-i18n>Timeframe</label>
                     <select id="timeSelect">
                         <option value="7" data-i18n>Last 7 Days</option>
                         <option value="30" data-i18n>Last 30 Days</option>
                         <option value="90" selected data-i18n>Last 90 Days</option>
-                        <option value="2026" data-i18n>Year 2026</option>
-                        <option value="2025" data-i18n>Year 2025</option>
-                        <option value="2024" data-i18n>Year 2024</option>
-                        <option value="all" data-i18n>All Time (Slow)</option>
                     </select>
                 </div>
 
                 <div class="control-group" style="margin-top: 15px;">
-                    <label data-i18n>Minimum Severity</label>
+                    <label for="cvssSeverity" data-i18n>Minimum Severity</label>
                     <select id="cvssSeverity">
                         <option value="" data-i18n>Any (Includes Unrated)</option>
                         <option value="LOW" data-i18n>Low+</option>
                         <option value="MEDIUM" data-i18n>Medium+</option>
                         <option value="HIGH" data-i18n>High+</option>
-                        <option value="CRITICAL" data-i18n>Critical</option>
+                        <option value="CRITICAL" data-i18n>Critical only</option>
                     </select>
+                    <p class="hint" data-i18n>A floor, not an exact match: High+ includes Critical.</p>
                 </div>
 
                 <button type="submit" class="search-btn" data-i18n>Search Database</button>
             </form>
+
+            <p class="prov" id="provenance"></p>
         </div>
 
         <div class="results-area">
@@ -197,253 +266,939 @@
 
             <div class="results-header">
                 <div class="rh-left">
-                    <span class="results-count" id="resultCount" data-i18n>0 Results</span>
+                    <span class="results-count" id="resultCount"></span>
                     <span class="api-status" id="apiStatus"></span>
                 </div>
 
-                <div class="sort-control">
-                    <label data-i18n>Sort By:</label>
-                    <select id="sortBy" onchange="reSortList()">
-                        <option value="date-new" data-i18n>Date (Newest First)</option>
-                        <option value="date-old" data-i18n>Date (Oldest First)</option>
-                        <option value="score-high" data-i18n>Score (High to Low)</option>
-                        <option value="score-low" data-i18n>Score (Low to High)</option>
-                    </select>
+                <div class="rh-right">
+                    <div class="sort-control">
+                        <label for="sortBy" data-i18n>Sort By:</label>
+                        <select id="sortBy">
+                            <option value="date-new" data-i18n>Date (Newest First)</option>
+                            <option value="date-old" data-i18n>Date (Oldest First)</option>
+                            <option value="score-high" data-i18n>Score (High to Low)</option>
+                            <option value="score-low" data-i18n>Score (Low to High)</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn-ghost" id="exportCsv">CSV</button>
+                    <button type="button" class="btn-ghost" id="exportJson">JSON</button>
                 </div>
             </div>
-            
+
             <div id="resultsList"></div>
+            <div id="loadMoreWrap"></div>
         </div>
     </div>
-    
+
+    <dialog id="viewsDialog" class="qv-dialog">
+        <div class="qv-inner">
+            <div class="qv-head">
+                <h2 data-i18n>Quick views</h2>
+                <button type="button" class="qv-x" id="qvClose" aria-label="Close">&times;</button>
+            </div>
+            <p class="qv-sub" data-i18n>A view is a keyword plus a timeframe, a severity floor and a sort order — the same thing the share link carries. Star up to five to keep them in the sidebar.</p>
+
+            <div class="qv-row-form">
+                <input type="text" id="qvName" autocomplete="off">
+                <button type="button" class="btn-ghost" id="qvSave" data-i18n>Save current view</button>
+            </div>
+
+            <input type="search" id="qvFilter" autocomplete="off">
+            <div class="qv-list" id="qvList"></div>
+
+            <div class="qv-foot">
+                <button type="button" class="btn-ghost" id="qvExport" data-i18n>Export</button>
+                <button type="button" class="btn-ghost" id="qvImport" data-i18n>Import</button>
+                <input type="file" id="qvFile" accept="application/json" hidden>
+                <span class="qv-note" data-i18n>Saved views live in this browser only.</span>
+            </div>
+        </div>
+    </dialog>
+
 <script>
-    const API_BASE = 'https://services.nvd.nist.gov/rest/json/cves/2.0/';
-    const MAX_RESULTS_PER_PAGE = 50;
-    
-    // Global variable to store current fetched data for client-side sorting
-    let currentVulnerabilities = [];
+/* ------------------------------------------------------------------
+   CVE Radar Pro — the NVD client.
 
-    // --- Init ---
-    // Sync URL with Search Bar while typing
-    document.getElementById('searchTerm').addEventListener('input', function(e) {
-        const term = e.target.value.trim();
-        
-        if (term) {
-            // updates the URL hash without adding a new history entry for every letter
-            history.replaceState(null, null, '#' + encodeURIComponent(term));
-        } else {
-            // Removes the hash if the input is empty
-            history.replaceState(null, null, window.location.pathname + window.location.search);
-        }
-    });
-    window.addEventListener('DOMContentLoaded', () => {
-        if (window.location.hash) {
-            const term = decodeURIComponent(window.location.hash.substring(1));
-            document.getElementById('searchTerm').value = term;
-        }
-        runSearch();
-    });
+   Three rules keep this honest, and each one exists because the previous
+   build broke it:
 
-    // --- Quick Search Actions ---
-    function quickSearch(term) {
-        document.getElementById('searchTerm').value = term;
-        runSearch();
+   1. FETCH BY DATE RANGE ONLY. `pubStartDate`/`pubEndDate` are capped at a
+      120-day span, so a calendar year is fetched as four quarter windows.
+      The old shortcut asked for `keywordSearch=CVE-2025`, but keywordSearch
+      matches the DESCRIPTION TEXT, not the identifier — it returned 45,284
+      records whose top hits were CVE-2023 and CVE-2024, and then kept only
+      the last page of them.
+   2. `cvssV3Severity` IS AN EXACT MATCH, NEVER A FLOOR. "High+" used to send
+      `cvssV3Severity=HIGH`, which excluded every Critical — the cautious
+      choice hid the dangerous records. A floor is now built by asking for
+      each level in it, and the floor is applied locally as well.
+   3. NEVER SHOW A COUNT WE DID NOT MEASURE. The header reports what is on
+      screen, what is loaded, and the API's own `totalResults` for the query.
+
+   Unkeyed NVD allows 5 requests per 30 s, so every call goes through
+   schedule() — a serial token bucket with one patient retry on a 403.
+   ------------------------------------------------------------------ */
+'use strict';
+
+const API_BASE = 'https://services.nvd.nist.gov/rest/json/cves/2.0/';
+const PAGE_SIZE = 1000;        // API maximum is 2000; 1000 keeps first paint sane
+const RATE_MAX = 5;            // requests ...
+const RATE_WINDOW = 30000;     // ... per this many ms, unkeyed
+const SEV_ORDER = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+
+const state = { keyword: '', timeframe: '90', severity: '', sort: 'date-new' };
+
+let streams = [];              // one per (date window × severity query)
+let records = [];              // every CVE fetched, deduplicated
+let shown = [];                // records after the severity floor and the sort
+let seenIds = new Set();
+let retrievedAt = null;
+
+/* ---- helpers ------------------------------------------------------ */
+
+const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+// CVE descriptions quote attack payloads verbatim and carry bare angle
+// brackets (`<user_id>`), so nothing from the API reaches innerHTML unescaped.
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ESCAPES[c]);
+
+// i18n.js is deferred, so guard t() for the (impossible-but-cheap) early call.
+const t_ = (k) => (typeof t === 'function' ? t(k) : k);
+function tf(key) {
+    const args = Array.prototype.slice.call(arguments, 1);
+    return t_(key).replace(/%(\d)/g, (m, i) => (args[i - 1] === undefined ? m : String(args[i - 1])));
+}
+
+// NVD timestamps carry no zone ("2026-08-21T13:41:31.243"). Left alone, JS
+// reads them as local time and the displayed date can slip by a day.
+function nvdDate(s) {
+    if (!s) return null;
+    return new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(s) ? s : s + 'Z');
+}
+const fmtDate = (s) => { const d = nvdDate(s); return d ? d.toLocaleDateString() : '—'; };
+const fmtNum = (n) => Number(n || 0).toLocaleString();
+const isoParam = (d) => d.toISOString().slice(0, 19) + '.000';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ---- rate-limited fetch ------------------------------------------- */
+
+const stamps = [];
+let chain = Promise.resolve();
+
+function schedule(url) {
+    const run = async () => {
+        for (;;) {
+            const now = Date.now();
+            while (stamps.length && now - stamps[0] > RATE_WINDOW) stamps.shift();
+            if (stamps.length < RATE_MAX) break;
+            const wait = RATE_WINDOW - (now - stamps[0]) + 50;
+            setStatus(tf('Rate limit reached — waiting %1s', Math.ceil(wait / 1000)));
+            await sleep(wait);
+        }
+        stamps.push(Date.now());
+        let res = await fetch(url);
+        if (res.status === 403 || res.status === 429) {
+            // NVD throttles with a 403. One patient retry, then give up honestly.
+            setStatus(tf('Rate limit reached — waiting %1s', RATE_WINDOW / 1000));
+            await sleep(RATE_WINDOW);
+            stamps.length = 0;
+            stamps.push(Date.now());
+            res = await fetch(url);
+        }
+        if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+        return res.json();
+    };
+    const p = chain.then(run, run);   // serialise, and keep going after a failure
+    chain = p.catch(() => {});
+    return p;
+}
+
+/* ---- query planning ------------------------------------------------ */
+
+// One request per level is worth it for the narrow floors people actually
+// triage on (Critical, High+). Wider floors would cost three or four
+// requests per window, so they fetch unfiltered and are filtered locally.
+function severityQueries(floor) {
+    if (!floor) return [null];
+    const levels = SEV_ORDER.slice(SEV_ORDER.indexOf(floor));
+    return levels.length <= 2 ? levels.reverse() : [null];   // Critical first
+}
+
+function windowsFor(timeframe) {
+    const now = new Date();
+    const out = [];
+    if (/^\d{4}$/.test(timeframe)) {
+        const y = parseInt(timeframe, 10);
+        // Quarters: the longest is 92 days, comfortably inside the 120-day cap.
+        // Newest first, because a year query paints progressively and the
+        // recent end of it is what anyone asked the question for.
+        [[9, 11], [6, 8], [3, 5], [0, 2]].forEach((q) => {
+            const start = new Date(Date.UTC(y, q[0], 1, 0, 0, 0));
+            if (start > now) return;
+            const end = new Date(Date.UTC(y, q[1] + 1, 1, 0, 0, 0) - 1000);
+            out.push({ start: start, end: end > now ? now : end });
+        });
+    } else {
+        const days = parseInt(timeframe, 10) || 90;
+        out.push({ start: new Date(now.getTime() - days * 86400000), end: now });
     }
+    return out;
+}
+
+function buildStreams() {
+    const sevs = severityQueries(state.severity);
+    const out = [];
+    windowsFor(state.timeframe).forEach((w) => {
+        sevs.forEach((sev) => out.push({
+            start: w.start, end: w.end, sev: sev, total: null, loaded: 0, done: false,
+        }));
+    });
+    return out;
+}
+
+function streamUrl(s) {
+    const p = new URLSearchParams();
+    p.set('resultsPerPage', String(PAGE_SIZE));
+    p.set('startIndex', String(s.loaded));
+    p.set('pubStartDate', isoParam(s.start));
+    p.set('pubEndDate', isoParam(s.end));
+    if (state.keyword) p.set('keywordSearch', state.keyword);
+    if (s.sev) p.set('cvssV3Severity', s.sev);
+    return API_BASE + '?' + p.toString();
+}
+
+// onEach paints after every stream. A year at a High+ floor is eight requests,
+// and the unkeyed rate limiter has to wait 30 s partway through — so the first
+// quarter must be on screen long before the last one is asked for.
+async function fetchStreams(list, onEach) {
+    let done = 0;
+    for (const s of list) {
+        setStatus(tf('Loading %1 of %2 requests…', done + 1, list.length));
+        const data = await schedule(streamUrl(s));
+        s.total = data.totalResults || 0;
+        const batch = data.vulnerabilities || [];
+        batch.forEach((v) => {
+            const c = v && v.cve;
+            if (!c || seenIds.has(c.id)) return;
+            seenIds.add(c.id);
+            records.push(c);
+        });
+        s.loaded += batch.length;
+        if (!batch.length || s.loaded >= s.total) s.done = true;
+        done++;
+        retrievedAt = new Date();
+        if (onEach) onEach();
+    }
+}
+
+/* ---- reading a record ---------------------------------------------- */
+
+// A record can carry several metric entries — NVD's own analysis plus whatever
+// the CNA supplied. Taking [0] blindly can show a CNA's score while NVD's sits
+// beside it, so prefer NVD, then any Primary, then whatever is there.
+function pickMetric(arr) {
+    if (!arr || !arr.length) return null;
+    return arr.filter((e) => e.source === 'nvd@nist.gov')[0]
+        || arr.filter((e) => e.type === 'Primary')[0]
+        || arr[0];
+}
+
+function metricsOf(c) {
+    const m = (c && c.metrics) || {};
+    const pick = (key, version) => {
+        const e = pickMetric(m[key]);
+        if (!e) return null;
+        return {
+            d: e.cvssData, v: version, sev: e.baseSeverity,
+            src: e.source === 'nvd@nist.gov' ? 'NVD' : 'CNA',
+        };
+    };
+    return pick('cvssMetricV31', '3.1') || pick('cvssMetricV30', '3.0') || pick('cvssMetricV2', '2.0');
+}
+function severityOf(c) {
+    const m = metricsOf(c);
+    if (!m) return null;
+    return ((m.d && m.d.baseSeverity) || m.sev || '').toUpperCase() || null;
+}
+function scoreOf(c) {
+    const m = metricsOf(c);
+    return m && m.d && typeof m.d.baseScore === 'number' ? m.d.baseScore : null;
+}
+// PENDING means there is genuinely no score — about 2% of records. A CVE that
+// NVD has not analysed yet usually still carries the CNA's score, and greying
+// that out would contradict the severity floor that just counted it. The
+// vulnStatus badge and the NVD/CNA chip say who scored it.
+const isUnrated = (c) => severityOf(c) === null;
+
+// Not every CNA puts English first.
+function englishDesc(c) {
+    const ds = (c && c.descriptions) || [];
+    const en = ds.filter((d) => d.lang === 'en')[0];
+    return ((en || ds[0] || {}).value) || '';
+}
+function cweList(c) {
+    const out = [];
+    ((c && c.weaknesses) || []).forEach((w) => (w.description || []).forEach((d) => {
+        if (/^CWE-\d+$/.test(d.value) && out.indexOf(d.value) === -1) out.push(d.value);
+    }));
+    return out.slice(0, 4);
+}
+
+/* ---- filter and sort ------------------------------------------------ */
+
+function applyFilterSort() {
+    const floor = state.severity;
+    shown = records.filter((c) => {
+        if (!floor) return true;
+        const s = severityOf(c);
+        if (!s) return false;                     // unrated cannot clear a floor
+        return SEV_ORDER.indexOf(s) >= SEV_ORDER.indexOf(floor);
+    });
+    const by = state.sort;
+    shown.sort((a, b) => {
+        if (by === 'date-new' || by === 'date-old') {
+            const da = nvdDate(a.published), db = nvdDate(b.published);
+            return by === 'date-new' ? db - da : da - db;
+        }
+        // Unrated records have no score, so they sort last in both
+        // directions rather than pretending to be a 0.
+        const sa = scoreOf(a), sb = scoreOf(b);
+        if (sa === null && sb === null) return 0;
+        if (sa === null) return 1;
+        if (sb === null) return -1;
+        return by === 'score-high' ? sb - sa : sa - sb;
+    });
+}
+
+/* ---- rendering ------------------------------------------------------ */
+
+function setStatus(msg) {
+    const el = document.getElementById('apiStatus');
+    if (el) el.textContent = msg;
+}
+
+function card(c) {
+    const m = metricsOf(c);
+    const sev = severityOf(c);
+    const unrated = isUnrated(c);
+    const score = scoreOf(c);
+    const desc = englishDesc(c);
+    const cwes = cweList(c);
+    const long = desc.length > 180;
+    const vector = m && m.d ? (m.d.vectorString || '') : '';
+
+    const div = document.createElement('div');
+    div.className = 'cve-item ' + (unrated ? 'pending' : (sev || 'pending').toLowerCase());
+    div.innerHTML =
+        '<div class="cve-content">' +
+            '<div class="cve-header-row">' +
+                '<a class="cve-id" target="_blank" rel="noopener" href="https://nvd.nist.gov/vuln/detail/' +
+                    encodeURIComponent(c.id) + '">' + esc(c.id) + '</a>' +
+                '<span class="badge badge-status">' + esc(c.vulnStatus || '—') + '</span>' +
+                '<button type="button" class="btn-ghost btn-copy" data-id="' + esc(c.id) + '">' +
+                    esc(t_('Copy ID')) + '</button>' +
+            '</div>' +
+            '<p class="cve-desc' + (long ? '' : ' expanded') + '" id="d-' + esc(c.id) + '">' + esc(desc) + '</p>' +
+            (long
+                ? '<button type="button" class="desc-toggle" aria-expanded="false" aria-controls="d-' +
+                    esc(c.id) + '">' + esc(t_('Expand description')) + '</button>'
+                : '') +
+            (m || cwes.length
+                ? '<div class="cve-tags">' +
+                    (m ? '<span class="chip">CVSS ' + esc(m.v) + ' · ' + esc(m.src) + '</span>' : '') +
+                    (vector ? '<span class="chip mono">' + esc(vector) + '</span>' : '') +
+                    cwes.map((w) => '<a class="chip" target="_blank" rel="noopener" href="https://cwe.mitre.org/data/definitions/' +
+                        encodeURIComponent(w.slice(4)) + '.html">' + esc(w) + '</a>').join('') +
+                  '</div>'
+                : '') +
+            '<div class="cve-meta">' +
+                '<span class="meta-item">📅 ' + esc(t_('Published:')) + ' ' + esc(fmtDate(c.published)) + '</span>' +
+                '<span class="meta-item">🕒 ' + esc(t_('Updated:')) + ' ' + esc(fmtDate(c.lastModified)) + '</span>' +
+            '</div>' +
+        '</div>' +
+        '<div class="score-box">' +
+            '<span class="score-val">' + (unrated || score === null ? '--' : esc(score)) + '</span>' +
+            '<span class="score-lbl">' + esc(unrated ? t_('PENDING') : (sev || '')) + '</span>' +
+        '</div>';
+    return div;
+}
+
+function emptyMessage() {
+    if (!records.length) return t_('No CVEs were published in this window.');
+    return tf('All %1 loaded records were filtered out by the severity floor.', fmtNum(records.length));
+}
+
+function renderHeader() {
+    const matched = streams.reduce((n, s) => n + (s.total || 0), 0);
+    const count = document.getElementById('resultCount');
+    if (count) {
+        count.textContent = tf('Showing %1 of %2 loaded (%3 matched)',
+            fmtNum(shown.length), fmtNum(records.length), fmtNum(matched));
+    }
+    const prov = document.getElementById('provenance');
+    if (prov) prov.textContent = retrievedAt ? tf('Data: NVD — retrieved %1', retrievedAt.toLocaleString()) : '';
+}
+
+function renderLoadMore() {
+    const wrap = document.getElementById('loadMoreWrap');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const remaining = streams.reduce((n, s) => n + Math.max(0, (s.total || 0) - s.loaded), 0);
+    if (remaining <= 0) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'load-more';
+    b.textContent = tf('Load more (%1 not yet loaded)', fmtNum(remaining));
+    b.addEventListener('click', loadMore);
+    wrap.appendChild(b);
+}
+
+function renderList() {
+    const list = document.getElementById('resultsList');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!shown.length) {
+        list.innerHTML = '<div class="empty">' + esc(emptyMessage()) + '</div>';
+    } else {
+        const frag = document.createDocumentFragment();
+        shown.forEach((c) => frag.appendChild(card(c)));
+        list.appendChild(frag);
+    }
+    renderHeader();
+    renderLoadMore();
+}
+
+/* ---- the search itself ---------------------------------------------- */
+
+async function withLoader(fn) {
+    // The overlay only covers an empty results area; once cards are painted it
+    // would hide the very thing progressive rendering just put on screen.
+    const loader = document.getElementById('loader');
+    loader.style.display = shown.length ? 'none' : 'flex';
+    try {
+        await fn();
+        setStatus(t_('NVD API Connected'));
+        return true;
+    } catch (err) {
+        console.error(err);
+        setStatus(t_('API Error'));
+        document.getElementById('resultsList').innerHTML =
+            '<div class="empty error"><h3>' + esc(t_('Connection Error')) + '</h3><p>' +
+            esc(err && err.status === 403
+                ? t_('NVD is rate-limiting this browser. Wait about a minute and try again.')
+                : t_('Could not retrieve data from NIST. Please wait a moment and try again.')) +
+            '</p></div>';
+        return false;
+    } finally {
+        loader.style.display = 'none';
+    }
+}
+
+async function runSearch() {
+    readControls();
+    writeHash();
+    streams = buildStreams();
+    records = []; shown = []; seenIds = new Set(); retrievedAt = null;
+    // Clear the previous result set without going through renderList(), which
+    // would flash "no CVEs in this window" before the first request returns.
+    document.getElementById('resultsList').innerHTML = '';
+    document.getElementById('loadMoreWrap').innerHTML = '';
+    if (await withLoader(() => fetchStreams(streams, paint))) paint();
+}
+
+function paint() {
+    applyFilterSort();
+    renderList();
+    // Progressive rendering means cards can appear while later requests are
+    // still queued behind the rate limiter — the overlay must get out of the way.
+    if (shown.length) document.getElementById('loader').style.display = 'none';
+}
+
+async function loadMore() {
+    // One more page from each unfinished stream, capped so a single click
+    // never costs more than the rate limiter's whole window.
+    const next = streams.filter((s) => !s.done && s.loaded < (s.total || 0)).slice(0, RATE_MAX);
+    if (!next.length) return;
+    if (await withLoader(() => fetchStreams(next, paint))) paint();
+}
+
+function reSortList() {
+    state.sort = document.getElementById('sortBy').value;
+    writeHash();
+    applyFilterSort();
+    renderList();
+}
+
+/* ---- controls, URL state, export ------------------------------------ */
+
+function readControls() {
+    state.keyword = document.getElementById('searchTerm').value.trim();
+    state.timeframe = document.getElementById('timeSelect').value || '90';
+    state.severity = document.getElementById('cvssSeverity').value;
+    state.sort = document.getElementById('sortBy').value;
+}
+
+function writeControls() {
+    document.getElementById('searchTerm').value = state.keyword;
+    const time = document.getElementById('timeSelect');
+    time.value = state.timeframe;
+    if (!time.value) { time.value = '90'; state.timeframe = '90'; }  // e.g. an old #t=all link
+    document.getElementById('cvssSeverity').value = state.severity;
+    document.getElementById('sortBy').value = state.sort;
+}
+
+// The whole view is in the hash, so a shared link reproduces what the sender
+// saw. The old build put only the keyword there.
+function writeHash() {
+    const p = new URLSearchParams();
+    if (state.keyword) p.set('q', state.keyword);
+    if (state.timeframe !== '90') p.set('t', state.timeframe);
+    if (state.severity) p.set('s', state.severity);
+    if (state.sort !== 'date-new') p.set('o', state.sort);
+    const h = p.toString();
+    history.replaceState(null, '', h ? '#' + h : location.pathname + location.search);
+}
+
+function readHash() {
+    const raw = location.hash.replace(/^#/, '');
+    if (!raw) return;
+    if (raw.indexOf('=') === -1) {           // back-compat: old links were a bare keyword
+        state.keyword = decodeURIComponent(raw);
+        return;
+    }
+    const p = new URLSearchParams(raw);
+    if (p.has('q')) state.keyword = p.get('q');
+    if (p.has('t')) state.timeframe = p.get('t');
+    if (p.has('s')) state.severity = p.get('s');
+    if (p.has('o')) state.sort = p.get('o');
+}
+
+function buildYearOptions() {
+    const sel = document.getElementById('timeSelect');
+    const keep = sel.value;
+    Array.prototype.slice.call(sel.querySelectorAll('option[data-year]')).forEach((o) => o.remove());
+    for (let y = new Date().getUTCFullYear(); y >= 1999; y--) {
+        const o = document.createElement('option');
+        o.value = String(y);
+        o.dataset.year = '1';
+        o.textContent = tf('Year %1', y);
+        sel.appendChild(o);
+    }
+    if (keep) sel.value = keep;
+}
+
+function exportRows() {
+    return shown.map((c) => {
+        const m = metricsOf(c);
+        return {
+            id: c.id,
+            published: c.published,
+            lastModified: c.lastModified,
+            status: c.vulnStatus || '',
+            severity: severityOf(c) || '',
+            score: scoreOf(c),
+            cvssVersion: m ? m.v : '',
+            vector: m && m.d ? (m.d.vectorString || '') : '',
+            cwe: cweList(c).join(' '),
+            description: englishDesc(c),
+        };
+    });
+}
+
+function download(name, mime, text) {
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(new Blob([text], { type: mime }));
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+}
+
+const csvCell = (v) => {
+    const s = String(v === null || v === undefined ? '' : v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+};
+
+function stamp() {
+    const d = retrievedAt || new Date();
+    return d.toISOString().slice(0, 10);
+}
+
+/* ---- quick views ----------------------------------------------------
+   A "view" is the whole search state — keyword, timeframe, severity floor,
+   sort — which is exactly what the URL hash already carries. That is why a
+   preset and a shared link are the same object here.
+
+   The rail shows five pinned chips and nothing else; everything else lives
+   in a dialog, so adding presets never grows the sidebar. The defaults are
+   grouped by what someone actually triages, and the counts behind the less
+   obvious ones were checked against the API before shipping them (DICOM 118,
+   PACS 103, Orthanc 9, GE Healthcare 40, Philips 98, Medtronic 34,
+   Palo Alto 336, SonicWall 146, Citrix 312, Ivanti 382).
+   -------------------------------------------------------------------- */
+
+const LS_KEY = 'cve.views';
+const MAX_PINS = 5;
+
+const DEFAULT_VIEWS = [
+    // Filter-driven views: no keyword, just the question.
+    { id: 'd:crit7',  group: 'Triage', label: 'Critical · last 7 days',  t: '7',  s: 'CRITICAL' },
+    { id: 'd:high30', group: 'Triage', label: 'High+ · last 30 days',    t: '30', s: 'HIGH' },
+
+    // The perimeter — where the exploited ones keep coming from.
+    { id: 'd:fortinet', group: 'Edge & VPN', label: 'Fortinet',  q: 'Fortinet' },
+    { id: 'd:ivanti',   group: 'Edge & VPN', label: 'Ivanti',    q: 'Ivanti' },
+    { id: 'd:citrix',   group: 'Edge & VPN', label: 'Citrix',    q: 'Citrix' },
+    { id: 'd:paloalto', group: 'Edge & VPN', label: 'Palo Alto', q: 'Palo Alto' },
+    { id: 'd:sonicwall',group: 'Edge & VPN', label: 'SonicWall', q: 'SonicWall' },
+    { id: 'd:cisco',    group: 'Edge & VPN', label: 'Cisco',     q: 'Cisco' },
+
+    { id: 'd:linux',   group: 'Operating systems', label: 'Linux Kernel', q: 'Linux Kernel' },
+    { id: 'd:windows', group: 'Operating systems', label: 'Windows',      q: 'Windows' },
+    { id: 'd:android', group: 'Operating systems', label: 'Android',      q: 'Android' },
+    { id: 'd:macos',   group: 'Operating systems', label: 'macOS',        q: 'macOS' },
+
+    { id: 'd:vmware',   group: 'Servers & data', label: 'VMware',          q: 'VMware' },
+    { id: 'd:exchange', group: 'Servers & data', label: 'Exchange Server', q: 'Exchange Server' },
+    { id: 'd:apache',   group: 'Servers & data', label: 'Apache',          q: 'Apache' },
+    { id: 'd:nginx',    group: 'Servers & data', label: 'nginx',           q: 'nginx' },
+    { id: 'd:openssl',  group: 'Servers & data', label: 'OpenSSL',         q: 'OpenSSL' },
+    { id: 'd:postgres', group: 'Servers & data', label: 'PostgreSQL',      q: 'PostgreSQL' },
+
+    { id: 'd:chrome',  group: 'Browsers', label: 'Chrome',  q: 'Chrome' },
+    { id: 'd:firefox', group: 'Browsers', label: 'Firefox', q: 'Firefox' },
+
+    // The corridor this site is actually built for. No other CVE front end
+    // ships these, and every one of them returns results.
+    { id: 'd:dicom',    group: 'Clinical & imaging', label: 'DICOM',         q: 'DICOM' },
+    { id: 'd:pacs',     group: 'Clinical & imaging', label: 'PACS',          q: 'PACS' },
+    { id: 'd:orthanc',  group: 'Clinical & imaging', label: 'Orthanc',       q: 'Orthanc' },
+    { id: 'd:ge',       group: 'Clinical & imaging', label: 'GE Healthcare', q: 'GE Healthcare' },
+    { id: 'd:philips',  group: 'Clinical & imaging', label: 'Philips',       q: 'Philips' },
+    { id: 'd:siemens',  group: 'Clinical & imaging', label: 'Siemens',       q: 'Siemens' },
+    { id: 'd:medtronic',group: 'Clinical & imaging', label: 'Medtronic',     q: 'Medtronic' },
+
+    { id: 'd:k8s',     group: 'Cloud & CI', label: 'Kubernetes', q: 'Kubernetes' },
+    { id: 'd:docker',  group: 'Cloud & CI', label: 'Docker',     q: 'Docker' },
+    { id: 'd:jenkins', group: 'Cloud & CI', label: 'Jenkins',    q: 'Jenkins' },
+    { id: 'd:gitlab',  group: 'Cloud & CI', label: 'GitLab',     q: 'GitLab' },
+
+    { id: 'd:rust',   group: 'Languages & runtimes', label: 'Rust',    q: 'Rust' },
+    { id: 'd:java',   group: 'Languages & runtimes', label: 'Java',    q: 'Java' },
+    { id: 'd:python', group: 'Languages & runtimes', label: 'Python',  q: 'Python' },
+    { id: 'd:node',   group: 'Languages & runtimes', label: 'Node.js', q: 'Node.js' },
+];
+
+const GROUP_ORDER = ['Yours', 'Triage', 'Edge & VPN', 'Operating systems', 'Servers & data',
+    'Browsers', 'Clinical & imaging', 'Cloud & CI', 'Languages & runtimes'];
+const DEFAULT_PINS = ['d:crit7', 'd:linux', 'd:windows', 'd:chrome', 'd:dicom'];
+
+const SEV_LABEL = { LOW: 'Low+', MEDIUM: 'Medium+', HIGH: 'High+', CRITICAL: 'Critical only' };
+const SORT_LABEL = {
+    'date-old': 'Date (Oldest First)',
+    'score-high': 'Score (High to Low)',
+    'score-low': 'Score (Low to High)',
+};
+
+// localStorage is the one thing this page stores, and it holds only the views
+// the user made. It throws outright in some privacy modes, so every access is
+// guarded and a failure just means "no saved views".
+let views = { pins: null, custom: [] };
+function loadViews() {
+    try {
+        const j = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+        views = {
+            pins: Array.isArray(j.pins) ? j.pins : null,
+            custom: Array.isArray(j.custom) ? j.custom.filter((v) => v && v.id && v.label) : [],
+        };
+    } catch (e) { views = { pins: null, custom: [] }; }
+}
+function saveViews() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(views)); } catch (e) { /* private mode */ }
+}
+
+const allViews = () => views.custom.concat(DEFAULT_VIEWS);
+const pinIds = () => (views.pins || DEFAULT_PINS);
+
+function pinnedViews() {
+    const byId = {};
+    allViews().forEach((v) => { byId[v.id] = v; });
+    return pinIds().map((id) => byId[id]).filter(Boolean).slice(0, MAX_PINS);
+}
+
+function timeframeLabel(tv) {
+    if (/^\d{4}$/.test(tv)) return tf('Year %1', tv);
+    return t_({ '7': 'Last 7 Days', '30': 'Last 30 Days', '90': 'Last 90 Days' }[tv] || 'Last 90 Days');
+}
+
+function viewSummary(v) {
+    const bits = [];
+    if (v.q) bits.push('“' + v.q + '”');
+    bits.push(timeframeLabel(v.t || '90'));
+    bits.push(v.s ? t_(SEV_LABEL[v.s]) : t_('Any severity'));
+    if (v.o && v.o !== 'date-new') bits.push(t_(SORT_LABEL[v.o]));
+    return bits.join(' · ');
+}
+
+function applyView(v) {
+    state.keyword = v.q || '';
+    state.timeframe = v.t || '90';
+    state.severity = v.s || '';
+    state.sort = v.o || 'date-new';
+    writeControls();
+    runSearch();
+}
+
+/* ---- the rail's five chips ---- */
+
+function renderChips() {
+    const wrap = document.getElementById('quickChips');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    pinnedViews().forEach((v) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'tag';
+        b.textContent = t_(v.label);
+        b.title = viewSummary(v);
+        b.addEventListener('click', () => applyView(v));
+        wrap.appendChild(b);
+    });
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'tag qv-more';
+    more.textContent = '⋯';
+    more.title = t_('All quick views');
+    more.setAttribute('aria-label', t_('All quick views'));
+    more.addEventListener('click', openViews);
+    wrap.appendChild(more);
+}
+
+/* ---- the dialog ---- */
+
+function openViews() {
+    renderViewList();
+    const d = document.getElementById('viewsDialog');
+    d.showModal();
+    document.getElementById('qvFilter').focus();
+}
+
+function renderViewList() {
+    const list = document.getElementById('qvList');
+    const needle = (document.getElementById('qvFilter').value || '').trim().toLowerCase();
+    const pins = pinIds();
+    const groups = {};
+    allViews().forEach((v) => {
+        const label = t_(v.label);
+        if (needle && (label + ' ' + (v.q || '')).toLowerCase().indexOf(needle) === -1) return;
+        const g = v.group === 'yours' ? 'Yours' : v.group;
+        (groups[g] = groups[g] || []).push(v);
+    });
+
+    list.innerHTML = '';
+    let any = false;
+    GROUP_ORDER.forEach((g) => {
+        if (!groups[g]) return;
+        any = true;
+        const h = document.createElement('div');
+        h.className = 'qv-group';
+        h.textContent = t_(g);
+        list.appendChild(h);
+        groups[g].forEach((v) => list.appendChild(viewRow(v, pins.indexOf(v.id) !== -1)));
+    });
+    if (!any) {
+        const p = document.createElement('p');
+        p.className = 'qv-none';
+        p.textContent = t_('No views match.');
+        list.appendChild(p);
+    }
+}
+
+function viewRow(v, pinned) {
+    const row = document.createElement('div');
+    row.className = 'qv-item';
+
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'qv-go';
+    go.innerHTML = esc(t_(v.label)) + '<small>' + esc(viewSummary(v)) + '</small>';
+    go.addEventListener('click', () => {
+        document.getElementById('viewsDialog').close();
+        applyView(v);
+    });
+    row.appendChild(go);
+
+    const pin = document.createElement('button');
+    pin.type = 'button';
+    pin.className = 'qv-act' + (pinned ? ' on' : '');
+    pin.textContent = pinned ? '★' : '☆';
+    pin.title = t_(pinned ? 'Unpin' : 'Pin');
+    pin.setAttribute('aria-label', pin.title);
+    pin.addEventListener('click', () => togglePin(v.id));
+    row.appendChild(pin);
+
+    if (v.group === 'yours') {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'qv-act';
+        del.textContent = '✕';
+        del.title = t_('Delete');
+        del.setAttribute('aria-label', del.title);
+        del.addEventListener('click', () => {
+            views.custom = views.custom.filter((c) => c.id !== v.id);
+            if (views.pins) views.pins = views.pins.filter((id) => id !== v.id);
+            saveViews(); renderChips(); renderViewList();
+        });
+        row.appendChild(del);
+    }
+    return row;
+}
+
+function togglePin(id) {
+    const cur = pinIds().slice();
+    const at = cur.indexOf(id);
+    if (at !== -1) cur.splice(at, 1);
+    else { cur.unshift(id); if (cur.length > MAX_PINS) cur.pop(); }
+    views.pins = cur;
+    saveViews(); renderChips(); renderViewList();
+}
+
+function saveCurrentView() {
+    readControls();
+    const nameEl = document.getElementById('qvName');
+    const label = (nameEl.value || '').trim() || state.keyword || t_('Untitled view');
+    const v = {
+        id: 'u:' + Date.now().toString(36),
+        group: 'yours', label: label,
+        q: state.keyword, t: state.timeframe, s: state.severity, o: state.sort,
+    };
+    views.custom.unshift(v);
+    views.pins = [v.id].concat(pinIds().filter((id) => id !== v.id)).slice(0, MAX_PINS);
+    saveViews();
+    nameEl.value = '';
+    renderChips();
+    renderViewList();
+}
+
+function wireViews() {
+    loadViews();
+    renderChips();
+
+    document.getElementById('qvSave').addEventListener('click', saveCurrentView);
+    document.getElementById('qvName').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); saveCurrentView(); }
+    });
+    document.getElementById('qvFilter').addEventListener('input', renderViewList);
+
+    document.getElementById('qvExport').addEventListener('click', () => {
+        download('cve-views.json', 'application/json', JSON.stringify(views, null, 2));
+    });
+    document.getElementById('qvImport').addEventListener('click', () => document.getElementById('qvFile').click());
+    document.getElementById('qvFile').addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        const r = new FileReader();
+        r.onload = () => {
+            try {
+                const j = JSON.parse(r.result);
+                const incoming = (Array.isArray(j.custom) ? j.custom : []).filter((v) => v && v.id && v.label);
+                const have = {};
+                views.custom.forEach((v) => { have[v.id] = 1; });
+                views.custom = views.custom.concat(incoming.filter((v) => !have[v.id]));
+                if (Array.isArray(j.pins)) views.pins = j.pins.slice(0, MAX_PINS);
+                saveViews(); renderChips(); renderViewList();
+            } catch (err) { console.error(err); }
+            e.target.value = '';
+        };
+        r.readAsText(f);
+    });
+
+    // Placeholders are attributes, so they sit outside applyStaticI18n's reach.
+    qvPlaceholders();
+}
+
+function qvPlaceholders() {
+    const name = document.getElementById('qvName');
+    const filter = document.getElementById('qvFilter');
+    if (name) name.placeholder = t_('Name this view');
+    if (filter) filter.placeholder = t_('Filter views…');
+}
+
+/* ---- wiring ---------------------------------------------------------- */
+
+function wire() {
+    buildYearOptions();
+    readHash();
+    writeControls();
 
     document.getElementById('searchForm').addEventListener('submit', (e) => {
         e.preventDefault();
-        const term = document.getElementById('searchTerm').value.trim();
-        if (term) window.location.hash = term;
         runSearch();
     });
 
-    // --- Core Search Logic ---
-    async function runSearch() {
-        const loader = document.getElementById('loader');
-        const status = document.getElementById('apiStatus');
-        
-        loader.style.display = 'flex';
-        status.textContent = t("Fetching...");
-        
-        const keyword = document.getElementById('searchTerm').value.trim();
-        const severity = document.getElementById('cvssSeverity').value;
-        const timeValue = document.getElementById('timeSelect').value;
+    wireViews();
 
-        try {
-            let data;
+    document.getElementById('sortBy').addEventListener('change', reSortList);
+    document.getElementById('qvClose').addEventListener('click',
+        () => document.getElementById('viewsDialog').close());
 
-            // Strategy Switch: Year vs Date Range
-            if (timeValue.length === 4 && parseInt(timeValue) > 2000) {
-                // Year Logic (Complex fetch to get end of list)
-                data = await fetchYearlyData(timeValue, keyword, severity);
-            } else {
-                // Standard Date Range Logic
-                data = await fetchDateRangeData(timeValue, keyword, severity);
-            }
-
-            // Store raw results globally
-            currentVulnerabilities = data.vulnerabilities || [];
-            
-            // Initial Sort (Newest First) and Render
-            reSortList();
-
-            status.textContent = t("NVD API Connected");
-
-        } catch (err) {
-            console.error(err);
-            document.getElementById('resultsList').innerHTML = `
-                <div style="text-align:center; padding: 40px; color: #ef4444;">
-                    <h3>${t('Connection Error')}</h3>
-                    <p>${t('Could not retrieve data from NIST. Please wait a moment and try again.')}</p>
-                </div>`;
-            status.textContent = t("API Error");
-        } finally {
-            loader.style.display = 'none';
-        }
-    }
-
-    async function fetchDateRangeData(days, keyword, severity) {
-        const params = new URLSearchParams();
-        params.append('resultsPerPage', MAX_RESULTS_PER_PAGE);
-        if (keyword) params.append('keywordSearch', keyword);
-        if (severity) params.append('cvssV3Severity', severity);
-
-        if (days !== 'all') {
-            const end = new Date();
-            const start = new Date();
-            start.setDate(end.getDate() - parseInt(days));
-            params.append('pubStartDate', start.toISOString().split('.')[0]);
-            params.append('pubEndDate', end.toISOString().split('.')[0]);
-        }
-        
-        const res = await fetch(`${API_BASE}?${params.toString()}`);
-        if (!res.ok) throw new Error(res.status);
-        return await res.json();
-    }
-
-    async function fetchYearlyData(year, keyword, severity) {
-        // 1. Probe for count
-        const yearKey = `CVE-${year}`;
-        const combinedKey = keyword ? `${keyword} ${yearKey}` : yearKey;
-        
-        const params = new URLSearchParams();
-        params.append('keywordSearch', combinedKey);
-        if (severity) params.append('cvssV3Severity', severity);
-        params.append('resultsPerPage', '1');
-
-        const probeRes = await fetch(`${API_BASE}?${params.toString()}`);
-        if (!probeRes.ok) throw new Error(probeRes.status);
-        const probeData = await probeRes.json();
-        
-        if (probeData.totalResults === 0) return probeData;
-
-        // 2. Fetch last page
-        let startIndex = probeData.totalResults - MAX_RESULTS_PER_PAGE;
-        if (startIndex < 0) startIndex = 0;
-
-        params.set('resultsPerPage', MAX_RESULTS_PER_PAGE);
-        params.set('startIndex', startIndex);
-
-        const finalRes = await fetch(`${API_BASE}?${params.toString()}`);
-        return await finalRes.json();
-    }
-
-    // --- Client Side Sorting ---
-    function reSortList() {
-        const criteria = document.getElementById('sortBy').value;
-        
-        // Sort the global array
-        currentVulnerabilities.sort((a, b) => {
-            const dateA = new Date(a.cve.published);
-            const dateB = new Date(b.cve.published);
-            
-            const scoreA = getScore(a.cve);
-            const scoreB = getScore(b.cve);
-
-            if (criteria === 'date-new') return dateB - dateA;
-            if (criteria === 'date-old') return dateA - dateB;
-            if (criteria === 'score-high') return scoreB - scoreA;
-            if (criteria === 'score-low') return scoreA - scoreB;
-        });
-
-        renderList();
-    }
-
-    function getScore(cve) {
-        const m = cve.metrics;
-        if (m.cvssMetricV31) return m.cvssMetricV31[0].cvssData.baseScore;
-        if (m.cvssMetricV30) return m.cvssMetricV30[0].cvssData.baseScore;
-        if (m.cvssMetricV2) return m.cvssMetricV2[0].cvssData.baseScore;
-        return 0;
-    }
-
-    // --- Rendering ---
-    function renderList() {
-        const list = document.getElementById('resultsList');
-        const countSpan = document.getElementById('resultCount');
-        
-        list.innerHTML = '';
-        countSpan.textContent = `${currentVulnerabilities.length} ${t('Results Shown')}`;
-
-        if (currentVulnerabilities.length === 0) {
-            list.innerHTML = `<div style="text-align:center; padding:40px; color:#64748b;">${t('No matching CVEs found.')}</div>`;
+    document.getElementById('resultsList').addEventListener('click', (e) => {
+        const toggle = e.target.closest('.desc-toggle');
+        if (toggle) {
+            const p = document.getElementById(toggle.getAttribute('aria-controls'));
+            const open = p.classList.toggle('expanded');
+            toggle.setAttribute('aria-expanded', String(open));
+            toggle.textContent = t_(open ? 'Collapse description' : 'Expand description');
             return;
         }
-
-        currentVulnerabilities.forEach(item => {
-            const cve = item.cve;
-            const meta = getSeverityMeta(cve);
-            const status = cve.vulnStatus || "Unknown";
-            const isUnrated = status === "Awaiting Analysis" || status === "Received" || status === "Undergoing Analysis";
-
-            const cardClass = isUnrated ? 'pending' : meta.className;
-            const scoreDisplay = isUnrated ? '--' : meta.score;
-            const labelDisplay = isUnrated ? t('PENDING') : meta.label;
-
-            const div = document.createElement('div');
-            div.className = `cve-item ${cardClass}`;
-            div.innerHTML = `
-                <div class="cve-content">
-                    <div class="cve-header-row">
-                        <a href="https://nvd.nist.gov/vuln/detail/${cve.id}" target="_blank" class="cve-id">${cve.id}</a>
-                        <span class="badge badge-status">${status}</span>
-                    </div>
-                    <p class="cve-desc" onclick="this.classList.toggle('expanded')" title="${t('Click to expand')}">${cve.descriptions[0].value}</p>
-                    <div class="cve-meta">
-                        <span class="meta-item">📅 ${t('Published:')} ${new Date(cve.published).toLocaleDateString()}</span>
-                        <span class="meta-item">🕒 ${t('Updated:')} ${new Date(cve.lastModified).toLocaleDateString()}</span>
-                    </div>
-                </div>
-                <div class="score-box">
-                    <span class="score-val">${scoreDisplay}</span>
-                    <span class="score-lbl">${labelDisplay}</span>
-                </div>
-            `;
-            list.appendChild(div);
-        });
-    }
-
-    function getSeverityMeta(cve) {
-        const m = cve.metrics;
-        let score = 0;
-        let label = 'UNKNOWN';
-        let className = 'pending';
-
-        if (m.cvssMetricV31) {
-            score = m.cvssMetricV31[0].cvssData.baseScore;
-            label = m.cvssMetricV31[0].cvssData.baseSeverity;
-        } else if (m.cvssMetricV30) {
-            score = m.cvssMetricV30[0].cvssData.baseScore;
-            label = m.cvssMetricV30[0].cvssData.baseSeverity;
-        } else if (m.cvssMetricV2) {
-            score = m.cvssMetricV2[0].cvssData.baseScore;
-            label = m.cvssMetricV2[0].baseSeverity || 'V2';
+        const copy = e.target.closest('.btn-copy');
+        if (copy && navigator.clipboard) {
+            navigator.clipboard.writeText(copy.dataset.id).then(() => {
+                const was = copy.textContent;
+                copy.textContent = t_('Copied');
+                setTimeout(() => { copy.textContent = was; }, 1200);
+            }).catch(() => {});
         }
+    });
 
-        if (label !== 'UNKNOWN') className = label.toLowerCase();
-        
-        return { score, label, className };
-    }
+    document.getElementById('exportCsv').addEventListener('click', () => {
+        const rows = exportRows();
+        if (!rows.length) return;
+        const cols = Object.keys(rows[0]);
+        const csv = [cols.join(',')].concat(
+            rows.map((r) => cols.map((k) => csvCell(r[k])).join(','))).join('\n');
+        download('cve-' + stamp() + '.csv', 'text/csv;charset=utf-8', csv);
+    });
+
+    document.getElementById('exportJson').addEventListener('click', () => {
+        const rows = exportRows();
+        if (!rows.length) return;
+        download('cve-' + stamp() + '.json', 'application/json', JSON.stringify({
+            source: 'NVD CVE API 2.0',
+            retrieved: (retrievedAt || new Date()).toISOString(),
+            query: { keyword: state.keyword, timeframe: state.timeframe, minimumSeverity: state.severity || 'any' },
+            loaded: records.length,
+            matched: streams.reduce((n, s) => n + (s.total || 0), 0),
+            results: rows,
+        }, null, 2));
+    });
+
+    runSearch();
+}
+
+// i18n.js registers its own DOMContentLoaded listener from a deferred script,
+// which means it runs after this one. Yielding a tick lets the static strings
+// translate before the first cards are built from them.
+window.addEventListener('DOMContentLoaded', () => setTimeout(wire, 0));
+
+// Re-render on a fleet language switch (called from i18n.js).
+window.cveRerender = function () {
+    buildYearOptions();
+    document.getElementById('timeSelect').value = state.timeframe;
+    qvPlaceholders();
+    renderChips();
+    if (document.getElementById('viewsDialog').open) renderViewList();
+    if (records.length || streams.length) renderList();
+};
 </script>
 <script src="carino-navbar.js" data-app="CVE" data-repo="CVE" defer></script>
 <script src="carino-lang.js" defer></script>
