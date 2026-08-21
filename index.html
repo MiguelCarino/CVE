@@ -152,7 +152,10 @@
 
         /* Provenance: where the data came from and when. Pinned to the bottom
            of the rail — a number without a retrieval time is a rumour. */
-        .prov { margin-top: auto; padding-top: 16px; border-top: 1px solid #1a1a1a; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: #555; }
+        .prov { display: block; width: 100%; margin-top: auto; padding: 16px 0 0; background: none; border: none; border-top: 1px solid #1a1a1a; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: #555; text-align: left; cursor: pointer; }
+        .prov:hover { color: #eab308; }
+        .prov:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .coverage { padding: 3px 8px; border: 1px solid #f59e0b; border-radius: 5px; background: #fffbeb; color: #b45309; font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; }
 
         /* Quick tags are <button> now, so they are reachable by keyboard. */
         button.tag { font-family: inherit; }
@@ -256,7 +259,7 @@
                 <button type="submit" class="search-btn" data-i18n>Search Database</button>
             </form>
 
-            <p class="prov" id="provenance"></p>
+            <button type="button" class="prov" id="provenance"></button>
         </div>
 
         <div class="results-area">
@@ -267,6 +270,7 @@
             <div class="results-header">
                 <div class="rh-left">
                     <span class="results-count" id="resultCount"></span>
+                    <span class="coverage" id="coverage"></span>
                     <span class="api-status" id="apiStatus"></span>
                 </div>
 
@@ -348,6 +352,17 @@ const SEV_ORDER = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
 const state = { keyword: '', timeframe: '90', severity: '', sort: 'date-new' };
 
+const DEFAULT_MIRROR = 'https://cve-data.carino.systems';
+
+let corpusMeta = null;         // what the local store says it holds, or null
+let corpusManifest = null;     // only set once a sync has actually fetched one
+let completeThrough = null;    // set when the plan needs an NVD tail past the snapshot
+let partial = false;           // that tail failed, so the answer stops at completeThrough
+let usedSources = {};
+let corpusWorker = null;
+let localSeq = 0;
+let syncTried = false;
+
 let streams = [];              // one per (date window × severity query)
 let records = [];              // every CVE fetched, deduplicated
 let shown = [];                // records after the severity floor and the sort
@@ -374,7 +389,14 @@ function nvdDate(s) {
     if (!s) return null;
     return new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(s) ? s : s + 'Z');
 }
-const fmtDate = (s) => { const d = nvdDate(s); return d ? d.toLocaleDateString() : '—'; };
+// Rendered in UTC, because that is the day the record actually carries. A
+// local corpus record expands to `2025-01-08T00:00:00.000` (contract §7) while
+// the same CVE fetched live carries `2025-01-08T10:00:00.000`; formatted in a
+// negative offset the first would print 7 January and the second 8 January —
+// the same CVE, two dates, depending on which source answered. The severity
+// floor and the date window already work in UTC days, so this is the day the
+// rest of the page means.
+const fmtDate = (s) => { const d = nvdDate(s); return d ? d.toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'; };
 const fmtNum = (n) => Number(n || 0).toLocaleString();
 const isoParam = (d) => d.toISOString().slice(0, 19) + '.000';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -445,6 +467,19 @@ function windowsFor(timeframe) {
 }
 
 function buildStreams() {
+    completeThrough = null;
+    // With a local corpus the plan is CveSources' job, because it is the only
+    // place that knows all three sources exist. Without one, nothing has
+    // changed: this is the same NVD-only planner as before.
+    if (corpusMeta && window.CveSources) {
+        try {
+            const p = CveSources.plan(state, corpusMeta, corpusManifest);
+            if (p && p.streams && p.streams.length) {
+                completeThrough = p.completeThrough;
+                return p.streams;
+            }
+        } catch (e) { console.error(e); }
+    }
     const sevs = severityQueries(state.severity);
     const out = [];
     windowsFor(state.timeframe).forEach((w) => {
@@ -469,15 +504,75 @@ function streamUrl(s) {
 // onEach paints after every stream. A year at a High+ floor is eight requests,
 // and the unkeyed rate limiter has to wait 30 s partway through — so the first
 // quarter must be on screen long before the last one is asked for.
+// The corpus worker belongs to the page, not to a module: a classic Worker
+// cannot share a global with cve-sources.js, and only one instance should ever
+// exist because the worker serialises searches internally.
+function corpusSearch(s) {
+    return new Promise((resolve, reject) => {
+        try {
+            if (!corpusWorker) corpusWorker = new Worker('js/cve-corpus-worker.js');
+        } catch (e) { reject(e); return; }
+        const w = corpusWorker;
+        const id = ++localSeq;
+        const out = [];
+        function cleanup() {
+            w.removeEventListener('message', onMsg);
+            w.removeEventListener('error', onErr);
+        }
+        function onMsg(e) {
+            const m = e.data;
+            if (!m || m.id !== id) return;
+            if (m.error) { cleanup(); reject(new Error(m.error)); return; }
+            if (m.records) out.push.apply(out, m.records);
+            if (m.done) {
+                cleanup();
+                resolve({ total: typeof m.total === 'number' ? m.total : out.length, records: out });
+            }
+        }
+        function onErr() { cleanup(); reject(new Error('corpus worker failed')); }
+        w.addEventListener('message', onMsg);
+        w.addEventListener('error', onErr);
+        w.postMessage({
+            id: id, cmd: 'search', tier: (corpusMeta && corpusMeta.tier) || 'full',
+            years: [s.year],
+            query: {
+                keyword: state.keyword,
+                from: CveSources.ymd(s.start), to: CveSources.ymd(s.end),
+                severity: s.sev || '',
+            },
+        });
+    });
+}
+
 async function fetchStreams(list, onEach) {
     let done = 0;
     for (const s of list) {
-        setStatus(tf('Loading %1 of %2 requests…', done + 1, list.length));
-        const data = await schedule(streamUrl(s));
-        s.total = data.totalResults || 0;
-        const batch = data.vulnerabilities || [];
-        batch.forEach((v) => {
-            const c = v && v.cve;
+        const src = s.source || 'nvd';
+        setStatus(src === 'local'
+            ? tf('Searching the local corpus — %1 of %2', done + 1, list.length)
+            : tf('Loading %1 of %2 requests…', done + 1, list.length));
+        let batch, total;
+        try {
+            if (src === 'local') {
+                const r = await corpusSearch(s);
+                total = r.total;
+                batch = r.records.map(CveSources.expand);
+            } else {
+                const d = await schedule(streamUrl(s));
+                total = d.totalResults || 0;
+                batch = (d.vulnerabilities || []).map((v) => v && v.cve).filter(Boolean);
+            }
+        } catch (err) {
+            // A failing NVD tail on top of an answer the corpus already gave is
+            // a shorter answer, not a failed search. It is recorded and said out
+            // loud in the header rather than absorbed — returning fewer records
+            // without saying so is the exact failure this rebuild removed.
+            if (records.length && src === 'nvd') { console.error(err); partial = true; done++; continue; }
+            throw err;
+        }
+        usedSources[src] = true;
+        s.total = total;
+        batch.forEach((c) => {
             if (!c || seenIds.has(c.id)) return;
             seenIds.add(c.id);
             records.push(c);
@@ -634,8 +729,29 @@ function renderHeader() {
         count.textContent = tf('Showing %1 of %2 loaded (%3 matched)',
             fmtNum(shown.length), fmtNum(records.length), fmtNum(matched));
     }
+    const cov = document.getElementById('coverage');
+    if (cov) {
+        cov.textContent = (partial && completeThrough) ? tf('complete through %1', completeThrough) : '';
+        cov.style.display = cov.textContent ? '' : 'none';
+    }
+    renderProvenance();
+}
+
+// The rail states which of the three sources actually answered, because "where
+// did this come from and when" is the whole claim the offline corpus makes.
+function renderProvenance() {
     const prov = document.getElementById('provenance');
-    if (prov) prov.textContent = retrievedAt ? tf('Data: NVD — retrieved %1', retrievedAt.toLocaleString()) : '';
+    if (!prov) return;
+    const snap = corpusMeta && corpusMeta.snapshot ? String(corpusMeta.snapshot).slice(0, 10) : null;
+    if (usedSources.local && snap) {
+        prov.textContent = usedSources.nvd
+            ? tf('Data: local snapshot %1 + NVD live', snap)
+            : tf('Data: local snapshot %1', snap);
+    } else if (retrievedAt) {
+        prov.textContent = tf('Data: NVD — retrieved %1', retrievedAt.toLocaleString());
+    } else {
+        prov.textContent = t_('Data source');
+    }
 }
 
 function renderLoadMore() {
@@ -676,7 +792,9 @@ async function withLoader(fn) {
     loader.style.display = shown.length ? 'none' : 'flex';
     try {
         await fn();
-        setStatus(t_('NVD API Connected'));
+        // A partial answer must not report a clean connection: the corpus
+        // carried it, and the span past the snapshot is missing.
+        setStatus(partial ? t_('NVD unreachable — local results only') : t_('NVD API Connected'));
         return true;
     } catch (err) {
         console.error(err);
@@ -698,6 +816,7 @@ async function runSearch() {
     writeHash();
     streams = buildStreams();
     records = []; shown = []; seenIds = new Set(); retrievedAt = null;
+    partial = false; usedSources = {};
     // Clear the previous result set without going through renderList(), which
     // would flash "no CVEs in this window" before the first request returns.
     document.getElementById('resultsList').innerHTML = '';
@@ -726,6 +845,39 @@ function reSortList() {
     writeHash();
     applyFilterSort();
     renderList();
+}
+
+/* ---- the local corpus ------------------------------------------------ */
+
+async function refreshCorpusMeta() {
+    corpusMeta = null;
+    if (!window.CveDB) return;
+    try {
+        await CveDB.open();
+        corpusMeta = await CveDB.getMeta();
+    } catch (e) {
+        corpusMeta = null;          // no IndexedDB, or it refused: the plan falls to NVD
+    }
+}
+
+// A corpus nobody refreshes drifts, and the snapshot tail only papers over the
+// gap one query at a time. Sync quietly after the first paint, at most once a
+// page and at most twice a day, and never disturb what is already on screen —
+// a failure here is invisible because every query can still reach NVD itself.
+async function backgroundSync() {
+    if (syncTried || !corpusMeta || !window.CveSync) return;
+    syncTried = true;
+    const last = corpusMeta.lastSync ? Date.parse(corpusMeta.lastSync) : 0;
+    if (last && Date.now() - last < 12 * 3600 * 1000) return;
+    try {
+        const base = corpusMeta.mirror || DEFAULT_MIRROR;
+        corpusManifest = await CveSync.manifest(base);
+        await CveSync.applyDeltas(base, corpusManifest, corpusMeta.tier || 'full');
+        await refreshCorpusMeta();
+        renderProvenance();
+    } catch (e) {
+        console.error(e);
+    }
 }
 
 /* ---- controls, URL state, export ------------------------------------ */
@@ -1182,7 +1334,21 @@ function wire() {
         }, null, 2));
     });
 
-    runSearch();
+    if (window.CveDataUI) {
+        try { CveDataUI.init(); } catch (e) { console.error(e); }
+    }
+    document.getElementById('provenance').addEventListener('click', () => {
+        if (window.CveDataUI) CveDataUI.open();
+    });
+    // The dialog downloads, updates or deletes the corpus; when it does, the
+    // plan for the next query changes, so re-read what the store now holds.
+    window.addEventListener('cve:datachanged', () => {
+        refreshCorpusMeta().then(() => { syncTried = true; runSearch(); });
+    });
+
+    refreshCorpusMeta()
+        .then(runSearch)
+        .then(() => setTimeout(backgroundSync, 1500));
 }
 
 // i18n.js registers its own DOMContentLoaded listener from a deferred script,
@@ -1200,6 +1366,12 @@ window.cveRerender = function () {
     if (records.length || streams.length) renderList();
 };
 </script>
+<!-- The offline corpus. Deferred, so they attach their globals before wire()
+     runs, and in dependency order: cve-sync uses CveDB, cve-data-ui uses both. -->
+<script src="js/cve-db.js" defer></script>
+<script src="js/cve-sync.js" defer></script>
+<script src="js/cve-sources.js" defer></script>
+<script src="js/cve-data-ui.js" defer></script>
 <script src="carino-navbar.js" data-app="CVE" data-repo="CVE" defer></script>
 <script src="carino-lang.js" defer></script>
 <script src="i18n.js" defer></script>

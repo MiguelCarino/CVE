@@ -1,5 +1,10 @@
 # CVE — scope for the downloadable database
 
+> **Status, 21 August 2026: built.** The publisher lives in `CVE-data`, the client modules in
+> `CVE/js/`, and the wire format is frozen in `CVE-data/CONTRACT.md`. What follows is the reasoning
+> that produced it; where a measurement here differs from the contract's, the contract measured a
+> real published tree and wins.
+
 **Drafted:** 21 August 2026 · **Status:** proposal, not yet decided
 **Question:** keep the live NVD search, *and* let the database be downloaded once and thereafter only
 updated.

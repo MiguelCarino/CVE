@@ -44,6 +44,38 @@ Other mechanics:
 - **Persistence** — no CVE data is ever cached or stored, and nothing about a search leaves the browser. The one thing kept locally is **the views you save**, in `localStorage` under `cve.views`; that access is wrapped so a browser that refuses it (private mode, storage disabled) simply has no saved views rather than breaking. Everything else lives in the URL hash. Use *Export* if you want the set to survive a cleared profile.
 - **Fleet chrome** — shared Carino Systems top navbar via `carino-navbar.js` (with `carino-clock.js`), self-hosted fonts via `fonts/carino-fonts.css`, gold-on-black filter rail with a light results area.
 
+## Offline corpus
+
+The page can hold the whole NVD corpus locally and search it with no network at all. Three sources
+are tried **per query**, and every fallback is announced rather than silent:
+
+| | Source | Falls through when |
+|---|---|---|
+| 1 | **Local** — 28 gzipped year shards in IndexedDB | no local copy; the store lacks a year the query needs; or the query has a keyword and the stored tier is `index` |
+| 2 | **Mirror** — your own host, default `cve-data.carino.systems` | network error, non-200, malformed manifest, or a SHA-256 mismatch |
+| 3 | **NVD live** | — |
+
+**A snapshot has a date; "last 7 days" does not.** When a query window runs past the snapshot, the
+residual span becomes its own NVD request and merges in. If that request fails, the local results
+stay on screen and the header says **complete through *date*** — because returning fewer records
+without saying so is the failure this whole rebuild exists to remove.
+
+Measured: **one year decompresses and scans in 244 ms, all 28 years in 892 ms, peak memory 139 MB.**
+Shards are stored compressed and decompressed **one at a time** in a Web Worker — holding the corpus
+as live objects instead costs 896 MB, which is the entire reason for that design. A year query
+offline is ~250 ms; the same query online is four to eight requests plus a possible 30-second
+rate-limit pause. **Offline is the fast path, not the degraded one.**
+
+Two tiers: **full** (~30 MB, with descriptions, full offline keyword search) and **index** (~5 MB,
+no descriptions, keyword matching falls back to id and product keys). The client offers `full` by
+default but warns and prefers `index` when `navigator.deviceMemory < 4` or the viewport is ≤900 px.
+
+Open the **Data source** dialog from the provenance line in the rail to download, update, delete, or
+point the client at your own mirror. The sidebar gains no controls.
+
+Publisher, wire format and the self-hosting bundle: **[CVE-data](https://github.com/MiguelCarino/CVE-data)**
+— `CONTRACT.md` is the schema of record, `SEAMS.md` walks one record end to end.
+
 ## Documents
 
 - [`REVIEW.md`](REVIEW.md) — the review this rebuild answers, with the API evidence for each finding.
