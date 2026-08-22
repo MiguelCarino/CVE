@@ -1,0 +1,2309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/webp" href="logo.webp">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVE Observatory</title>
+    <meta name="description" content="What the CVE corpus actually contains: NVD's enrichment backlog, KEV overlap, publication volume, severity drift, CWE movement and CNA data quality — computed from one published snapshot, no corpus download needed.">
+    <link rel="stylesheet" href="fonts/carino-fonts.css">
+    <style>
+        /* The observatory is a control surface, not the readable results
+           column, so it takes the fleet's dark palette whole — the same
+           tokens as branding.carino.systems, inlined because this page
+           must work off a USB stick with no network at all. */
+        :root {
+            --bg: #050505;
+            --bg-elev: #0d0d0d;
+            --bg-card: #0b0b0b;
+            --accent: #eab308;
+            --accent-faint: rgba(234,179,8,0.06);
+            --accent-glow: rgba(234,179,8,0.15);
+            --border: #262626;
+            --hair: #1a1a1a;
+            --text: #ffffff;
+            --text-sec: #a3a3a3;
+            --text-muted: #666666;
+            --ok: #22c55e;
+            --warn: #eab308;
+            --err: #ef4444;
+            --info: #38bdf8;
+            --sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+            --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+            --display: 'Red Hat Display', var(--sans);
+        }
+
+        * { box-sizing: border-box; }
+        :root { scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 6px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(234,179,8,0.3); }
+
+        /* The page scrolls vertically and never horizontally: every wide
+           figure carries its own .fig-scroll. */
+        html, body { max-width: 100%; overflow-x: hidden; }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: var(--sans); font-size: 15px; line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+        a { color: var(--accent); }
+        .num { font-variant-numeric: tabular-nums; }
+        .mono { font-family: var(--mono); }
+
+        main { max-width: 1080px; margin: 0 auto; padding: 0 20px 100px; }
+
+        /* ---- hero ---------------------------------------------------- */
+        .hero {
+            background: radial-gradient(1200px 520px at 50% -12%, rgba(234,179,8,0.08) 0%, transparent 60%),
+                        linear-gradient(180deg, #0b0b0b 0%, #050505 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 46px 20px 34px; text-align: center;
+        }
+        .hero .kicker {
+            font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.35em;
+            text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+        }
+        .hero h1 {
+            font-family: var(--display); font-weight: 900;
+            font-size: clamp(2rem, 6.4vw, 3.4rem); line-height: 0.98; margin: 0;
+            text-transform: uppercase; letter-spacing: 1px;
+            background: linear-gradient(130deg, #fef08a 0%, #eab308 50%, #b45309 100%);
+            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .hero p {
+            max-width: 660px; margin: 18px auto 0; color: var(--text-sec);
+            font-family: var(--mono); font-size: 0.82rem; line-height: 1.75;
+        }
+
+        /* ---- provenance strip ---------------------------------------- */
+        .prov {
+            display: grid; gap: 10px 18px; grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+            margin: 22px 0 0; padding: 14px 16px;
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+        }
+        .pv-k {
+            font-family: var(--mono); font-size: 0.6rem; text-transform: uppercase;
+            letter-spacing: 0.1em; color: var(--text-muted);
+        }
+        .pv-v { font-family: var(--mono); font-size: 0.78rem; color: var(--text); word-break: break-all; }
+        .pv-v .age { color: var(--text-muted); }
+        .pv-v .age.stale { color: var(--err); }
+        .pv-v .ok { color: var(--ok); }
+        .pv-v .bad { color: var(--err); }
+
+        .banner {
+            margin: 14px 0 0; padding: 12px 14px; border-radius: 8px;
+            border: 1px solid var(--border); border-left: 3px solid var(--warn);
+            background: var(--bg-card);
+            font-family: var(--mono); font-size: 0.72rem; line-height: 1.75; color: var(--text-sec);
+        }
+        .banner.bad { border-left-color: var(--err); }
+        .banner b { color: var(--text); font-weight: 600; }
+
+        /* ---- section nav --------------------------------------------- */
+        .toc {
+            display: flex; gap: 6px; margin: 20px -20px 8px; padding: 12px 20px;
+            overflow-x: auto; border-bottom: 1px solid var(--hair);
+        }
+        .toc a {
+            flex: none; font-family: var(--mono); font-size: 0.6rem; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--text-sec); text-decoration: none;
+            border: 1px solid var(--border); border-radius: 4px; padding: 5px 9px; transition: 0.15s;
+        }
+        .toc a:hover, .toc a:focus-visible { border-color: var(--accent); color: var(--accent); background: var(--accent-faint); }
+
+        /* ---- panels -------------------------------------------------- */
+        .panel { margin: 40px 0 0; scroll-margin-top: 16px; }
+        .panel-num {
+            font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.2em;
+            color: var(--accent); text-transform: uppercase;
+        }
+        .panel h2 {
+            font-family: var(--display); font-weight: 800; font-size: 1.5rem;
+            margin: 6px 0 0; letter-spacing: 0.2px;
+        }
+        .panel .lede { margin: 8px 0 0; color: var(--text-sec); font-size: 0.92rem; max-width: 70ch; }
+
+        .tiles { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 0; }
+        .tile {
+            flex: 1 1 150px; min-width: 138px; padding: 10px 12px;
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
+        }
+        .tile .t-k {
+            font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em;
+            text-transform: uppercase; color: var(--text-muted);
+        }
+        .tile .t-v {
+            font-family: var(--mono); font-size: 1.15rem; font-weight: 700; margin: 3px 0 0;
+            font-variant-numeric: tabular-nums;
+        }
+        .tile .t-v.gold { color: var(--accent); }
+        .tile .t-s { font-family: var(--mono); font-size: 0.62rem; line-height: 1.5; color: var(--text-muted); margin-top: 3px; }
+
+        /* ---- figures -------------------------------------------------- */
+        .fig {
+            margin: 20px 0 0; padding: 14px 14px 12px;
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+        }
+        .fig h3 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+        .fig .sub { margin: 4px 0 0; font-size: 0.84rem; color: var(--text-sec); }
+        /* The caveat is IN the figure (contract §11 rule 1) — never a footnote. */
+        .fig .caveat {
+            margin: 10px 0 0; padding: 8px 10px; border-left: 2px solid var(--accent);
+            background: var(--accent-faint);
+            font-family: var(--mono); font-size: 0.68rem; line-height: 1.65; color: var(--text-sec);
+        }
+        .fig .caveat b { color: var(--text); }
+        .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 12px 0 2px; }
+        .legend span {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-family: var(--mono); font-size: 0.62rem; color: var(--text-sec);
+        }
+        .legend i { width: 10px; height: 10px; border-radius: 2px; display: block; }
+        .legend i.hollow { background: none !important; border: 1px dashed #3a3a3a; }
+
+        /* No horizontal padding: the chart is drawn at this box's clientWidth,
+           and padding would put the drawing 8px wider than the box it is
+           measured against — which reads as every chart overflowing slightly. */
+        .fig-scroll { overflow-x: auto; overflow-y: hidden; margin: 8px 0 0; padding: 0 0 4px; }
+        .fig-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .nline.hint:empty { display: none; }
+        .nline.hint { color: #5a5a5a; }
+        .fig svg { display: block; }
+        .fig svg text { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+        .fig .ax { stroke: #1e1e1e; stroke-width: 1; shape-rendering: crispEdges; }
+        .fig .axl { font-size: 9px; fill: #6b6b6b; }
+        .fig .xl { font-size: 9px; fill: #8a8a8a; }
+        .fig .rl { font-size: 10px; fill: #cfcfcf; }
+        .fig .vl { font-size: 10px; fill: #cfcfcf; }
+        .fig .hollow { fill: none; stroke: #333; stroke-width: 1; stroke-dasharray: 2 2; }
+        .fig .ln { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+        .fig .dot { fill: var(--accent); }
+
+        .nline {
+            margin: 8px 0 0; font-family: var(--mono); font-size: 0.62rem; line-height: 1.7;
+            color: var(--text-muted); word-spacing: 0.05em;
+        }
+        .nline b { color: var(--text-sec); font-weight: 600; }
+
+        .stamp {
+            margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--hair);
+            font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.04em;
+            color: #5a5a5a; word-break: break-all;
+        }
+
+        details.data { margin: 8px 0 0; }
+        details.data > summary {
+            font-family: var(--mono); font-size: 0.62rem; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--text-muted); cursor: pointer; padding: 4px 0;
+        }
+        details.data > summary:hover, details.data > summary:focus-visible { color: var(--accent); }
+        .tblwrap { overflow-x: auto; margin-top: 6px; }
+        table.tbl { border-collapse: collapse; width: 100%; min-width: 320px; }
+        table.tbl th, table.tbl td {
+            padding: 6px 10px 6px 0; text-align: left; vertical-align: top;
+            font-family: var(--mono); font-size: 0.7rem; white-space: nowrap;
+            border-bottom: 1px solid var(--hair);
+        }
+        table.tbl th {
+            color: var(--text-muted); font-weight: 600; text-transform: uppercase;
+            font-size: 0.6rem; letter-spacing: 0.08em;
+        }
+        table.tbl td { color: var(--text-sec); font-variant-numeric: tabular-nums; }
+        table.tbl td.n, table.tbl th.n { text-align: right; padding-right: 14px; }
+        table.tbl caption {
+            caption-side: top; text-align: left; padding: 0 0 8px;
+            font-family: var(--mono); font-size: 0.66rem; line-height: 1.6; color: var(--text-sec);
+        }
+        th button.sort {
+            background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+            font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit;
+        }
+        th button.sort:hover, th button.sort:focus-visible { color: var(--accent); }
+        th button.sort .arrow { color: var(--accent); }
+
+        .minibar { display: inline-block; width: 46px; height: 5px; background: #1e1e1e; border-radius: 2px; overflow: hidden; vertical-align: middle; margin-right: 7px; }
+        .minibar span { display: block; height: 100%; background: var(--accent); }
+
+        .btn {
+            background: transparent; border: 1px solid var(--border); color: var(--text-sec);
+            font-family: var(--mono); font-size: 0.66rem; text-transform: uppercase;
+            letter-spacing: 0.06em; padding: 6px 10px; border-radius: 6px; cursor: pointer; transition: 0.15s;
+        }
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible {
+            outline: 2px solid var(--accent); outline-offset: 2px;
+        }
+
+        /* ---- boot / error -------------------------------------------- */
+        #boot { margin: 24px 0 0; }
+        .card {
+            padding: 16px 18px; background: var(--bg-card);
+            border: 1px solid var(--border); border-radius: 10px;
+        }
+        .card.err { border-left: 3px solid var(--err); }
+        .card h2 { margin: 0 0 8px; font-family: var(--display); font-size: 1.15rem; }
+        .card p { margin: 8px 0 0; font-size: 0.9rem; color: var(--text-sec); }
+        .card .why {
+            margin: 10px 0 0; padding: 10px 12px; background: var(--bg-elev);
+            border: 1px solid var(--border); border-radius: 6px;
+            font-family: var(--mono); font-size: 0.72rem; line-height: 1.7;
+            color: var(--text); word-break: break-word; white-space: pre-wrap;
+        }
+        .card ul { margin: 10px 0 0; padding-left: 20px; color: var(--text-sec); font-size: 0.86rem; }
+        .card li { margin: 4px 0; }
+        .mirrorbox { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+        .mirrorbox input {
+            flex: 1 1 220px; min-width: 0; padding: 8px 10px; background: var(--bg-elev);
+            border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+            font-family: var(--mono); font-size: 0.76rem;
+        }
+        .mirrorbox input::placeholder { color: #555; }
+        .mirrorbox input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(234,179,8,0.12); }
+
+        .skel { height: 10px; border-radius: 4px; background: linear-gradient(90deg, #101010, #171717, #101010); }
+        .skel + .skel { margin-top: 10px; }
+
+        footer.foot {
+            margin: 60px 0 0; padding: 18px 0 0; border-top: 1px solid var(--hair);
+            font-family: var(--mono); font-size: 0.66rem; line-height: 1.9; color: var(--text-muted);
+        }
+        footer.foot a { color: var(--text-sec); }
+        footer.foot a:hover { color: var(--accent); }
+
+        .vh {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+            overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+        }
+
+        @media (max-width: 560px) {
+            main { padding: 0 14px 80px; }
+            .toc { margin: 20px -14px 8px; padding: 12px 14px; }
+            .panel h2 { font-size: 1.25rem; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="hero">
+    <div class="kicker">Carino Systems · CVE</div>
+    <h1>The Observatory</h1>
+    <p>What the corpus actually contains — the enrichment backlog first, because that is the
+       story of the last two years and it is also our own data-quality disclosure. One 200 KB
+       file, no corpus download, every figure stamped with the snapshot it came from.</p>
+</header>
+
+<main>
+    <!-- Filled by paintProvenance(); the skeleton keeps the first paint honest
+         rather than showing numbers that are not measured yet. -->
+    <div class="prov" id="prov" aria-live="polite">
+        <div><div class="pv-k">Mirror</div><div class="pv-v" id="pvMirror">…</div></div>
+        <div><div class="pv-k">Snapshot</div><div class="pv-v" id="pvSnapshot">…</div></div>
+        <div><div class="pv-k">Records</div><div class="pv-v num" id="pvRecords">…</div></div>
+        <div><div class="pv-k">stats.json.gz</div><div class="pv-v" id="pvStats">…</div></div>
+        <div style="grid-column: 1 / -1;"><div class="pv-k">manifestSha256</div><div class="pv-v" id="pvHash">…</div></div>
+    </div>
+
+    <div id="banners"></div>
+
+    <nav class="toc" id="toc" aria-label="Sections" hidden>
+        <a href="#backlog">01 Backlog</a>
+        <a href="#kev">02 KEV overlap</a>
+        <a href="#volume">03 Volume</a>
+        <a href="#severity">04 Severity</a>
+        <a href="#cwe">05 CWE</a>
+        <a href="#quality">06 CNA quality</a>
+        <a href="#rhythm">07 Rhythm</a>
+    </nav>
+
+    <div id="boot">
+        <div class="card" id="bootCard">
+            <h2>Reading the snapshot…</h2>
+            <p class="mono" id="bootWhat" style="font-size:0.76rem;">manifest.json, then stats.json.gz. Nothing else is fetched.</p>
+            <div style="margin-top:16px;">
+                <div class="skel" style="width:78%"></div>
+                <div class="skel" style="width:54%"></div>
+                <div class="skel" style="width:66%"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="panels"></div>
+
+    <footer class="foot">
+        <div>Every number on this page is read from one published file and can be recomputed by
+             anyone holding the snapshot. Nothing is stored, nothing is reported, no account exists.</div>
+        <div id="footLinks" style="margin-top:6px;"></div>
+        <div style="margin-top:6px;">
+            <a href="index.html">← CVE Radar</a> ·
+            <a href="https://github.com/MiguelCarino/CVE-data">CVE-data (the publisher)</a> ·
+            AGPL-3.0
+        </div>
+    </footer>
+</main>
+
+<!-- CveDB only to read a saved mirror address; CveSync for the manifest fetch,
+     its validation, gunzip and SHA-256. No shard is ever touched here. -->
+<script src="js/cve-db.js" defer></script>
+<script src="js/cve-sync.js" defer></script>
+<script src="carino-navbar.js" data-app="CVE Observatory" data-repo="CVE" defer></script>
+<script src="carino-lang.js" defer></script>
+<script>
+(function () {
+    /* ------------------------------------------------------------------
+       CVE Observatory — contract §11.
+
+       Loads exactly two files: `manifest.json` and `stats.json.gz`. Never a
+       shard, never NVD, never a third party. That is the point of the page:
+       the most interesting public-facing view of this corpus is also its
+       smallest download, so it must render on a phone on a hotel connection.
+
+       Charts are inline SVG built with createElementNS — no library, no
+       canvas, and no string concatenation into innerHTML anywhere on this
+       page. Every value that reaches the DOM goes through textContent or
+       setAttribute, so a hostile mirror cannot inject markup through a CNA
+       name or a CWE id.
+
+       The five integrity rules of §11 are structural here, not disclaimers:
+
+       1. Nothing is ranked as "most insecure". The CNA panel is a
+          data-quality table and carries that sentence inside the figure.
+       2. Missing is never folded into zero. "No CVSS" and "severity none"
+          are different columns; a CWE absent from a year's published top
+          list is drawn as an empty outlined cell, not a zero.
+       3. Every figure prints the snapshot and manifestSha256 it came from.
+          A statistic without a snapshot is a rumour. That hash is the
+          manifest with its own "stats" key removed — a file cannot name the
+          hash of a file that names its hash, so the circle is cut there.
+          To recompute it: fetch manifest.json, delete the "stats" key, and
+          hash the JSON with no whitespace plus a trailing newline.
+       4. The backlog is the first panel, and the panels that depend on it
+          say so.
+       5. A median or a mean never appears without its sample size. The
+          publisher carries an `n` beside every one it writes and this page
+          prints it; where an older snapshot has none, it prints "n not
+          published" — it never guesses one, and never claims one is absent
+          from a file that publishes it.
+       ------------------------------------------------------------------ */
+    'use strict';
+
+    var DEFAULT_MIRROR = 'https://cve-data.carino.systems';
+    var STATS_GUESS = 'stats.json.gz';   // §11 fixes the path; the manifest still decides
+    var STALE_DAYS = 7;                  // §9: past a week the age indicator turns red
+    var HEX64 = /^[0-9a-f]{64}$/;
+
+    var SEV_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'none'];
+    var SEV_COLOR = {
+        CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e', none: '#64748b',
+    };
+    var SEV_LABEL = {
+        CRITICAL: 'Critical', HIGH: 'High', MEDIUM: 'Medium', LOW: 'Low',
+        none: 'None / unrated',
+    };
+    var GOLD = '#eab308';
+    var DIM = '#3a3a3a';
+    var INFO = '#38bdf8';
+    var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    var MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    /* What we actually loaded. Nothing is rendered from a field that was
+       never read, so every one of these starts null rather than 0. */
+    var app = {
+        base: DEFAULT_MIRROR,
+        manifest: null,
+        stats: null,
+        statsUrl: '',
+        statsBytes: null,      // byte length actually received
+        verified: null,        // true | false | null (could not check)
+        verifyNote: '',
+    };
+
+    /* ---- small helpers ------------------------------------------------ */
+
+    function el(tag, cls, text) {
+        var n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text != null) n.textContent = text;
+        return n;
+    }
+    function $(id) { return document.getElementById(id); }
+    function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
+
+    function isNum(v) { return typeof v === 'number' && isFinite(v); }
+    function isInt(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v; }
+    function arr(v) { return Array.isArray(v) ? v : []; }
+    function obj(v) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null; }
+
+    function fmtNum(n) { return isNum(n) ? Number(n).toLocaleString() : '—'; }
+    function fmtPct(n, digits) {
+        if (!isNum(n)) return '—';
+        return n.toFixed(digits == null ? 2 : digits) + '%';
+    }
+    // A share the page computes from two published counts. Arithmetic on
+    // measured numbers is fine; inventing a numerator is not.
+    function share(a, b) { return (isNum(a) && isNum(b) && b > 0) ? (a / b) * 100 : null; }
+    function fmtDays(n) {
+        if (!isNum(n)) return '—';
+        return Number(n).toLocaleString() + (Math.abs(n) === 1 ? ' day' : ' days');
+    }
+    function shortHash(h) { return (typeof h === 'string' && h.length >= 12) ? h.slice(0, 12) + '…' : (h || '—'); }
+
+    /* §11 rule 5. The publisher carries an `n` beside every median and mean it
+       writes; older builds did not. `nOf` reads it where it is, and `nText`
+       prints either the real sample size or the fact that this snapshot has
+       none — it never guesses one, and it never claims one is missing when the
+       file in front of it publishes it. */
+    function nOf(o, key) {
+        var v = obj(o) ? o[key == null ? 'n' : key] : null;
+        return isInt(v) && v >= 0 ? v : null;
+    }
+    function nText(n) { return n == null ? 'n not published' : 'n = ' + fmtNum(n); }
+
+    /* `cna[].pctScored` and `cna[].pctCwe` are fractions of 1, not percentages:
+       the publisher writes round(scored/count, 4), so full coverage is 1 and
+       not 100. Multiplying is the whole fix; the guard is there because a
+       number outside [0,1] is not the fraction this page was told to expect,
+       and printing 5,580% would be worse than printing nothing. */
+    function fractionPct(v) {
+        if (!isNum(v) || v < 0 || v > 1) return null;
+        return v * 100;
+    }
+
+    function parseDate(s) {
+        if (!s) return null;
+        var d = new Date(s);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    function ymd(s) { return (typeof s === 'string' && s.length >= 10) ? s.slice(0, 10) : '—'; }
+    function ageDays(d) { return Math.floor((Date.now() - d.getTime()) / 86400000); }
+    function ageText(days) {
+        if (days <= 0) return 'today';
+        if (days === 1) return 'yesterday';
+        return days + ' days old';
+    }
+    function ymLabel(ym) {
+        if (typeof ym !== 'string' || ym.length < 7) return String(ym == null ? '' : ym);
+        var m = parseInt(ym.slice(5, 7), 10);
+        return (MONTH_ABBR[m - 1] || ym.slice(5, 7)) + ' ' + ym.slice(0, 4);
+    }
+
+    /* ---- SVG kit ------------------------------------------------------ */
+
+    var NS = 'http://www.w3.org/2000/svg';
+
+    function s(tag, attrs) {
+        var n = document.createElementNS(NS, tag);
+        if (attrs) {
+            for (var k in attrs) {
+                if (Object.prototype.hasOwnProperty.call(attrs, k) && attrs[k] != null) {
+                    n.setAttribute(k, String(attrs[k]));
+                }
+            }
+        }
+        return n;
+    }
+    function sText(x, y, str, cls, anchor) {
+        var n = s('text', { x: x, y: y, 'class': cls || 'axl', 'text-anchor': anchor || 'start' });
+        n.textContent = str;
+        return n;
+    }
+    // A <title> child is the only tooltip on this page: native, keyboard-free,
+    // and carried into the accessibility tree by every engine that matters.
+    function tip(node, text) {
+        var t = s('title');
+        t.textContent = text;
+        node.appendChild(t);
+        return node;
+    }
+    function svgRoot(w, h, label) {
+        var root = s('svg', {
+            width: w, height: h, viewBox: '0 0 ' + w + ' ' + h,
+            role: 'img', 'aria-label': label || '',
+        });
+        return root;
+    }
+
+    /* X labels are drawn only where they fit — the alternative at 320 categories
+       is a grey smear that reads as a filled axis — and the first and last are
+       pulled inside the drawing rather than hanging off an edge the scroll
+       container then clips. Returns the new right-hand watermark. */
+    function xLabelAt(root, x, y, lab, W, lastEnd) {
+        var text = String(lab);
+        var wGuess = text.length * 5.2;
+        var anchor = 'middle';
+        var px = x;
+        var start = x - wGuess / 2;
+        if (start < 0) { anchor = 'start'; px = 0; start = 0; }
+        else if (x + wGuess / 2 > W) { anchor = 'end'; px = W; start = W - wGuess; }
+        if (start < lastEnd + 6) return lastEnd;
+        root.appendChild(sText(px, y, text, 'xl', anchor));
+        return start + wGuess;
+    }
+
+    // Axis maxima are rounded up to 1/2/5 × 10^k so the gridline labels are
+    // numbers a reader can hold in their head.
+    function niceMax(v) {
+        if (!isNum(v) || v <= 0) return 1;
+        var exp = Math.floor(Math.log(v) / Math.LN10);
+        var pow = Math.pow(10, exp);
+        var f = v / pow;
+        var m = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+        return m * pow;
+    }
+    function tickText(v, max) {
+        if (max >= 1000000) return (v / 1000000).toFixed(v % 1000000 === 0 ? 0 : 1) + 'M';
+        if (max >= 10000) return Math.round(v / 1000) + 'k';
+        if (max >= 1000) return (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k';
+        return String(Math.round(v * 100) / 100);
+    }
+
+    /* Vertical columns, optionally stacked, optionally normalised to 100%.
+       Everything time-series on this page is one of these, because a column
+       per month is the only form that survives 320 categories in a scroll
+       container and still reads at 360 px. */
+    function columns(width, o) {
+        var cats = arr(o.cats);
+        var series = arr(o.series);
+        var padL = o.padL == null ? 42 : o.padL;
+        var padR = 10, padT = 8;
+        var padB = o.padB == null ? 20 : o.padB;
+        var plotH = o.height == null ? 150 : o.height;
+        var gap = o.gap == null ? 2 : o.gap;
+        var minBarW = o.minBarW == null ? 6 : o.minBarW;
+
+        var n = cats.length;
+        if (!n) return null;
+
+        var avail = Math.max(60, width - padL - padR);
+        var barW = Math.max(minBarW, (avail - gap * (n - 1)) / n);
+        var innerW = n * barW + gap * (n - 1);
+        var W = Math.max(width, Math.ceil(padL + innerW + padR));
+        var H = padT + plotH + padB;
+
+        var max = o.pct ? 100 : niceMax(o.max != null ? o.max : cats.reduce(function (mx, c) {
+            var t = 0;
+            for (var i = 0; i < series.length; i++) t += Math.max(0, Number(c.values[i]) || 0);
+            return Math.max(mx, o.stacked ? t : Math.max.apply(null, [0].concat(c.values.map(function (v) { return Number(v) || 0; }))));
+        }, 0));
+
+        var root = svgRoot(W, H, o.aria || '');
+        var y = function (v) { return padT + plotH - (v / max) * plotH; };
+
+        // Gridlines first so bars sit on top of them.
+        var ticks = o.pct ? [0, 25, 50, 75, 100] : [0, max / 2, max];
+        ticks.forEach(function (tv) {
+            root.appendChild(s('line', { 'class': 'ax', x1: padL, x2: padL + innerW, y1: y(tv), y2: y(tv) }));
+            root.appendChild(sText(padL - 6, y(tv) + 3, o.pct ? tv + '%' : tickText(tv, max), 'axl', 'end'));
+        });
+
+        var lastLabelEnd = -1e9;
+        for (var i = 0; i < n; i++) {
+            var c = cats[i];
+            var x = padL + i * (barW + gap);
+            var base = padT + plotH;
+            var total = 0;
+            var j;
+            for (j = 0; j < series.length; j++) total += Math.max(0, Number(c.values[j]) || 0);
+
+            for (j = 0; j < series.length; j++) {
+                var raw = Math.max(0, Number(c.values[j]) || 0);
+                var v = o.pct ? (total > 0 ? (raw / total) * 100 : 0) : raw;
+                if (v <= 0) continue;
+                var h = (v / max) * plotH;
+                if (h < 0.6) h = 0.6;
+                var top = o.stacked ? base - h : y(v);
+                var rect = s('rect', {
+                    x: o.stacked ? x : x + (barW / series.length) * j,
+                    y: top,
+                    width: o.stacked ? barW : barW / series.length,
+                    height: h,
+                    fill: series[j].color,
+                });
+                tip(rect, (c.title || c.label) + ' — ' + series[j].label + ': ' +
+                    (o.fmt ? o.fmt(raw, c, series[j]) : fmtNum(raw)) +
+                    (o.pct && total > 0 ? ' (' + ((raw / total) * 100).toFixed(1) + '%)' : ''));
+                root.appendChild(rect);
+                if (o.stacked) base -= h;
+            }
+
+            var lab = o.xLabel ? o.xLabel(c, i) : c.label;
+            if (lab) {
+                lastLabelEnd = xLabelAt(root, x + barW / 2, padT + plotH + 13, lab, W, lastLabelEnd);
+            }
+        }
+        root.appendChild(s('line', { 'class': 'ax', x1: padL, x2: padL + innerW, y1: padT + plotH, y2: padT + plotH }));
+        return root;
+    }
+
+    /* Horizontal bars with a label column and a value column. Rows may carry
+       more than one bar (the "all records vs KEV" comparison), each with its
+       own value text, because two bars sharing one number would be a lie. */
+    function hbars(width, o) {
+        var rows = arr(o.rows);
+        if (!rows.length) return null;
+        var labelW = o.labelW == null ? Math.min(150, Math.max(76, Math.round(width * 0.32))) : o.labelW;
+        var valueW = o.valueW == null ? 92 : o.valueW;
+        var barH = o.barH == null ? 11 : o.barH;
+        var barGap = 3;
+        var rowPad = o.rowPad == null ? 12 : o.rowPad;
+        var W = Math.max(width, 240);
+        var trackW = Math.max(40, W - labelW - valueW - 8);
+
+        var max = o.max != null ? o.max : rows.reduce(function (mx, r) {
+            return arr(r.bars).reduce(function (m2, b) { return Math.max(m2, Number(b.value) || 0); }, mx);
+        }, 0);
+        if (!(max > 0)) max = 1;
+
+        var yPos = 4;
+        // A row's sub-line gets its own band under the bars. Drawn beside the
+        // label it would run under the track, which is how a caption turns into
+        // a smudge.
+        var heights = rows.map(function (r) {
+            var nb = Math.max(1, arr(r.bars).length);
+            return nb * barH + (nb - 1) * barGap + rowPad + (r.sub ? 11 : 0);
+        });
+        var H = heights.reduce(function (a, b) { return a + b; }, 8);
+
+        var root = svgRoot(W, H, o.aria || '');
+        rows.forEach(function (r, i) {
+            var bars = arr(r.bars);
+            var blockH = bars.length * barH + (bars.length - 1) * barGap;
+            var mid = yPos + blockH / 2 + 3;
+            // A row label that does not fit is shortened rather than allowed to
+            // run under its own bar; the full text stays in the tooltip.
+            var full = String(r.label);
+            var fits = Math.max(3, Math.floor((labelW - 6) / 5.7));
+            var lbl = sText(0, mid, full.length > fits ? full.slice(0, fits - 1) + '…' : full, 'rl', 'start');
+            tip(lbl, r.title || full);
+            root.appendChild(lbl);
+            if (r.sub) {
+                var subFits = Math.max(8, Math.floor((W - 4) / 5.2));
+                var subText = String(r.sub);
+                var sn = sText(0, yPos + blockH + 10, subText.length > subFits ? subText.slice(0, subFits - 1) + '…' : subText, 'axl', 'start');
+                tip(sn, subText);
+                root.appendChild(sn);
+            }
+
+            bars.forEach(function (b, k) {
+                var by = yPos + k * (barH + barGap);
+                var v = Math.max(0, Number(b.value) || 0);
+                var w = (v / max) * trackW;
+                root.appendChild(s('rect', { x: labelW, y: by, width: trackW, height: barH, fill: '#141414', rx: 2 }));
+                if (b.missing) {
+                    // Missing is not zero: an outlined track and a word, never a
+                    // flat bar that reads as a measured nothing.
+                    var hollow = s('rect', { x: labelW, y: by, width: trackW, height: barH, 'class': 'hollow', rx: 2 });
+                    tip(hollow, (b.label || r.label) + ': not published in this snapshot');
+                    root.appendChild(hollow);
+                } else if (w > 0) {
+                    var rect = s('rect', { x: labelW, y: by, width: Math.max(1, w), height: barH, fill: b.color || GOLD, rx: 2 });
+                    tip(rect, (b.label ? b.label + ' — ' : '') + r.label + ': ' + (b.tipText || fmtNum(v)));
+                    root.appendChild(rect);
+                }
+                var vt = sText(W - 2, by + barH - 1, b.missing ? 'not published' : (b.value_text || fmtNum(v)), 'vl', 'end');
+                root.appendChild(vt);
+            });
+            yPos += heights[i];
+        });
+        return root;
+    }
+
+    /* A line over ordered points. Used where the quantity is a level rather
+       than a count: percentage backlog, median lag, mean CVSS. */
+    function linechart(width, o) {
+        var pts = arr(o.pts);
+        if (!pts.length) return null;
+        var padL = o.padL == null ? 42 : o.padL;
+        var padR = 10, padT = 10, padB = 20;
+        var plotH = o.height == null ? 120 : o.height;
+        var minStep = o.minStep == null ? 8 : o.minStep;
+
+        var n = pts.length;
+        var avail = Math.max(60, width - padL - padR);
+        var step = Math.max(minStep, n > 1 ? avail / (n - 1) : avail);
+        var innerW = n > 1 ? step * (n - 1) : 0;
+        var W = Math.max(width, Math.ceil(padL + innerW + padR + 4));
+        var H = padT + plotH + padB;
+
+        var vals = pts.map(function (p) { return Number(p.y); }).filter(isNum);
+        // With no numeric point and no fixed scale, Math.min of an empty list
+        // is Infinity and every coordinate below becomes NaN — an SVG that
+        // renders as nothing with no explanation. Say there is nothing instead.
+        if (!vals.length && (o.min == null || o.max == null)) return null;
+        var lo = o.min != null ? o.min : Math.min.apply(null, vals);
+        var hi = o.max != null ? o.max : Math.max.apply(null, vals);
+        if (!(hi > lo)) { hi = lo + 1; }
+        var pad = (hi - lo) * 0.12;
+        lo = o.min != null ? o.min : lo - pad;
+        hi = o.max != null ? o.max : hi + pad;
+
+        var root = svgRoot(W, H, o.aria || '');
+        var x = function (i) { return padL + i * step; };
+        var y = function (v) { return padT + plotH - ((v - lo) / (hi - lo)) * plotH; };
+
+        [lo, (lo + hi) / 2, hi].forEach(function (tv) {
+            root.appendChild(s('line', { 'class': 'ax', x1: padL, x2: padL + Math.max(innerW, 1), y1: y(tv), y2: y(tv) }));
+            root.appendChild(sText(padL - 6, y(tv) + 3, o.fmtTick ? o.fmtTick(tv) : tickText(tv, hi), 'axl', 'end'));
+        });
+
+        var d = '';
+        pts.forEach(function (p, i) {
+            if (!isNum(Number(p.y))) return;
+            d += (d ? ' L' : 'M') + x(i).toFixed(1) + ' ' + y(Number(p.y)).toFixed(1);
+        });
+        if (d) root.appendChild(s('path', { 'class': 'ln', d: d, stroke: o.color || GOLD }));
+
+        var lastLabelEnd = -1e9;
+        pts.forEach(function (p, i) {
+            if (isNum(Number(p.y))) {
+                var dot = s('circle', { cx: x(i), cy: y(Number(p.y)), r: n > 60 ? 1.6 : 2.6, 'class': 'dot', fill: o.color || GOLD });
+                tip(dot, p.label + ': ' + (o.fmtValue ? o.fmtValue(Number(p.y), p) : String(p.y)) +
+                    (p.n != null ? '  (n = ' + fmtNum(p.n) + ')' : ''));
+                root.appendChild(dot);
+            }
+            var lab = o.xLabel ? o.xLabel(p, i) : p.label;
+            if (lab) {
+                lastLabelEnd = xLabelAt(root, x(i), padT + plotH + 13, lab, W, lastLabelEnd);
+            }
+        });
+        return root;
+    }
+
+    /* ---- page furniture ----------------------------------------------- */
+
+    // Contract §11 rule 3. Repeated under every figure on purpose: figures get
+    // screenshotted and pasted into tickets, and the stamp has to travel with
+    // the picture.
+    /* `measuredAt` overrides the snapshot for the two tables a delta run cannot
+       re-measure and therefore carries forward from an earlier build. Stamping
+       those with today's snapshot would be a claim of freshness the file does
+       not make: stats.json names the snapshot that actually measured them in
+       `provenanceFrom`, and that is the date that goes under the figure. */
+    function stamp(measuredAt) {
+        var snap = measuredAt || (app.stats ? app.stats.snapshot : (app.manifest ? app.manifest.snapshot : ''));
+        var hash = app.stats && typeof app.stats.manifestSha256 === 'string' ? app.stats.manifestSha256 : '';
+        var d = el('div', 'stamp');
+        d.appendChild(document.createTextNode(
+            (measuredAt ? 'measured ' : 'snapshot ') + (snap ? ymd(snap) : 'not published') +
+            ' · manifestSha256 ' + (hash ? shortHash(hash) : 'not published')));
+        if (hash) d.title = 'manifestSha256 ' + hash;
+        return d;
+    }
+
+    /* Which snapshot measured `cna` and `cvssDrift`, when that is not this one.
+       Returns null on a full run, where the two dates are the same and there is
+       nothing extra to say. */
+    function carriedFrom(st) {
+        var from = st && typeof st.provenanceFrom === 'string' ? st.provenanceFrom : null;
+        if (!from) return null;
+        return (st.snapshot && from === st.snapshot) ? null : from;
+    }
+
+    function panel(id, num, title, lede) {
+        var sec = el('section', 'panel');
+        sec.id = id;
+        sec.setAttribute('aria-labelledby', id + '-h');
+        sec.appendChild(el('div', 'panel-num', num));
+        var h = el('h2', null, title);
+        h.id = id + '-h';
+        sec.appendChild(h);
+        if (lede) sec.appendChild(el('p', 'lede', lede));
+        $('panels').appendChild(sec);
+        return sec;
+    }
+
+    function tiles(host, list) {
+        var wrap = el('div', 'tiles');
+        list.forEach(function (t) {
+            var d = el('div', 'tile');
+            d.appendChild(el('div', 't-k', t.k));
+            var v = el('div', 't-v' + (t.gold ? ' gold' : ''), t.v);
+            d.appendChild(v);
+            if (t.s) d.appendChild(el('div', 't-s', t.s));
+            wrap.appendChild(d);
+        });
+        host.appendChild(wrap);
+        return wrap;
+    }
+
+    function legend(host, items) {
+        var l = el('div', 'legend');
+        items.forEach(function (it) {
+            var sp = el('span');
+            var i = el('i', it.hollow ? 'hollow' : null);
+            if (!it.hollow) i.style.background = it.color;
+            sp.appendChild(i);
+            sp.appendChild(document.createTextNode(it.label));
+            l.appendChild(sp);
+        });
+        host.appendChild(l);
+        return l;
+    }
+
+    /* A figure: heading, optional sub, optional caveat, the chart, optional
+       notes, the data table, and always the stamp. `build(width)` is kept so
+       the chart can be redrawn at the real pixel width on resize — SVG text
+       scaled by viewBox becomes unreadable at 360 px, so nothing here is
+       scaled; it is re-laid out. */
+    var figures = [];
+
+    function figure(host, o) {
+        var fig = el('figure', 'fig');
+        var cap = el('figcaption');
+        cap.appendChild(el('h3', null, o.title));
+        if (o.sub) cap.appendChild(el('p', 'sub', o.sub));
+        fig.appendChild(cap);
+        if (o.caveat) {
+            var cv = el('div', 'caveat');
+            if (o.caveatLead) {
+                cv.appendChild(el('b', null, o.caveatLead + ' '));
+            }
+            cv.appendChild(document.createTextNode(o.caveat));
+            fig.appendChild(cv);
+        }
+        if (o.legend) legend(fig, o.legend);
+
+        var scroll = el('div', 'fig-scroll');
+        fig.appendChild(scroll);
+        var hint = el('div', 'nline hint');
+        fig.appendChild(hint);
+
+        if (o.note) fig.appendChild(el('div', 'nline', o.note));
+        if (o.nodes) o.nodes.forEach(function (n) { fig.appendChild(n); });
+        if (o.table) fig.appendChild(dataTable(o.table));
+        fig.appendChild(stamp(o.measuredAt));
+        host.appendChild(fig);
+
+        var entry = { scroll: scroll, hint: hint, build: o.build, scrollEnd: !!o.scrollEnd, hasTable: !!o.table, lastW: -1 };
+        figures.push(entry);
+        drawFigure(entry);
+        return fig;
+    }
+
+    function drawFigure(entry) {
+        // The floor is a last resort for an unmeasurable box (display:none, a
+        // detached clone), not a minimum design width: anything above it must be
+        // drawn at the real width or the chart hangs over its container.
+        var w = Math.max(240, Math.floor(entry.scroll.clientWidth) || 320);
+        if (Math.abs(w - entry.lastW) < 3) return;
+        entry.lastW = w;
+        clear(entry.scroll);
+        var node = null;
+        try {
+            node = entry.build(w);
+        } catch (err) {
+            // A chart that cannot be drawn says so where the chart would be;
+            // it never takes the rest of the page down with it.
+            entry.scroll.appendChild(el('div', 'nline', 'This chart could not be drawn: ' + (err && err.message ? err.message : String(err))));
+            return;
+        }
+        if (!node) {
+            entry.scroll.appendChild(el('div', 'nline', 'Not published in this snapshot.'));
+            return;
+        }
+        entry.scroll.appendChild(node);
+
+        // A chart wider than its box scrolls, and a scrollable region that
+        // cannot be focused is unreachable by keyboard — so it becomes a
+        // labelled, tabbable group, and the overflow is stated in words rather
+        // than left to a cut-off axis label to imply.
+        var overflows = entry.scroll.scrollWidth > entry.scroll.clientWidth + 4;
+        if (overflows) {
+            entry.scroll.tabIndex = 0;
+            entry.scroll.setAttribute('role', 'group');
+            entry.scroll.setAttribute('aria-label', 'Scrollable chart: ' + (node.getAttribute('aria-label') || ''));
+            if (entry.hint) {
+                entry.hint.textContent = 'Wider than this screen — the chart scrolls sideways.' +
+                    (entry.hasTable ? ' Every value is listed in the table below it.' : '');
+            }
+        } else {
+            entry.scroll.removeAttribute('tabindex');
+            entry.scroll.removeAttribute('role');
+            entry.scroll.removeAttribute('aria-label');
+            if (entry.hint) entry.hint.textContent = '';
+        }
+
+        // Time series are most useful at their right-hand end.
+        if (entry.scrollEnd) {
+            try { entry.scroll.scrollLeft = entry.scroll.scrollWidth; } catch (e) { /* ignore */ }
+        }
+    }
+
+    function redrawAll() { figures.forEach(drawFigure); }
+
+    function watchResize() {
+        var timer = null;
+        var kick = function () {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(redrawAll, 120);
+        };
+        if (typeof ResizeObserver === 'function') {
+            try {
+                new ResizeObserver(kick).observe(document.querySelector('main'));
+                return;
+            } catch (e) { /* fall through to resize */ }
+        }
+        window.addEventListener('resize', kick);
+    }
+
+    function dataTable(t) {
+        var det = el('details', 'data');
+        det.appendChild(el('summary', null, t.summary || 'Show the numbers'));
+        var wrap = el('div', 'tblwrap');
+        var table = el('table', 'tbl');
+        if (t.caption) {
+            var capt = el('caption', null, t.caption);
+            table.appendChild(capt);
+        }
+        var thead = el('thead');
+        var trh = el('tr');
+        arr(t.head).forEach(function (h, i) {
+            var th = el('th', (t.align && t.align[i] === 'n') ? 'n' : null, typeof h === 'string' ? h : String(h));
+            th.scope = 'col';
+            trh.appendChild(th);
+        });
+        thead.appendChild(trh);
+        table.appendChild(thead);
+        var tbody = el('tbody');
+        arr(t.rows).forEach(function (r) {
+            var tr = el('tr');
+            r.forEach(function (cell, i) {
+                var td = el('td', (t.align && t.align[i] === 'n') ? 'n' : null, cell == null ? '—' : String(cell));
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        det.appendChild(wrap);
+        return det;
+    }
+
+    function banner(text, bad, lead) {
+        var b = el('div', 'banner' + (bad ? ' bad' : ''));
+        if (lead) b.appendChild(el('b', null, lead + ' '));
+        b.appendChild(document.createTextNode(text));
+        $('banners').appendChild(b);
+        return b;
+    }
+
+    /* ---- provenance ---------------------------------------------------- */
+
+    function paintProvenance() {
+        var m = app.manifest;
+        var st = app.stats;
+
+        var mirror = $('pvMirror');
+        clear(mirror);
+        var a = el('a', null, app.base.replace(/^https?:\/\//, ''));
+        a.href = app.base + '/manifest.json';
+        a.rel = 'noreferrer';
+        mirror.appendChild(a);
+
+        var snapEl = $('pvSnapshot');
+        clear(snapEl);
+        var snapIso = (st && st.snapshot) || (m && m.snapshot) || '';
+        var d = parseDate(snapIso);
+        snapEl.appendChild(document.createTextNode(d ? ymd(snapIso) : '—'));
+        if (d) {
+            var days = ageDays(d);
+            var age = el('span', 'age' + (days > STALE_DAYS ? ' stale' : ''), '  ' + ageText(days));
+            age.title = snapIso;
+            snapEl.appendChild(age);
+        }
+
+        $('pvRecords').textContent = st && isNum(st.records) ? fmtNum(st.records)
+            : (m && isNum(m.records) ? fmtNum(m.records) : '—');
+
+        var sv = $('pvStats');
+        clear(sv);
+        sv.appendChild(document.createTextNode(app.statsBytes != null ? Math.round(app.statsBytes / 1024) + ' KB' : '—'));
+        if (app.verified === true) {
+            sv.appendChild(el('span', 'ok', '  ✓ sha256 verified'));
+        } else if (app.verified === false) {
+            sv.appendChild(el('span', 'bad', '  ✗ sha256 mismatch'));
+        } else if (app.verifyNote) {
+            sv.appendChild(el('span', 'age', '  unverified'));
+            sv.title = app.verifyNote;
+        }
+
+        var hv = $('pvHash');
+        clear(hv);
+        var hash = st && typeof st.manifestSha256 === 'string' ? st.manifestSha256 : '';
+        hv.appendChild(document.createTextNode(hash || 'not published in this snapshot'));
+
+        var links = $('footLinks');
+        clear(links);
+        var l1 = el('a', null, 'manifest.json');
+        l1.href = app.base + '/manifest.json';
+        links.appendChild(l1);
+        if (app.statsUrl) {
+            links.appendChild(document.createTextNode(' · '));
+            var l2 = el('a', null, app.statsUrl.replace(app.base + '/', ''));
+            l2.href = app.statsUrl;
+            links.appendChild(l2);
+        }
+    }
+
+    /* ---- loading ------------------------------------------------------- */
+
+    function mirrorFromQuery() {
+        var q;
+        try {
+            q = new URLSearchParams(window.location.search).get('mirror');
+        } catch (e) {
+            q = null;
+        }
+        if (!q) return null;
+        // A mirror address arrives from a link someone else may have written,
+        // so only http(s) is accepted and it is echoed in the provenance strip
+        // where the reader can see which host answered.
+        if (!/^https?:\/\/[^\s]+$/i.test(q)) return null;
+        return q.replace(/\/+$/, '');
+    }
+
+    // The saved mirror lives in CveDB meta (§7), which is an async read. It is
+    // raced against a short timeout so a browser that hangs on IndexedDB — a
+    // private window, a locked profile — costs a fraction of a second, not the
+    // page.
+    function savedMirror() {
+        if (!window.CveDB) return Promise.resolve(null);
+        var meta = Promise.resolve()
+            .then(function () { return window.CveDB.open(); })
+            .then(function () { return window.CveDB.getMeta(); })
+            .then(function (m) { return (m && typeof m.mirror === 'string' && m.mirror) ? m.mirror.replace(/\/+$/, '') : null; })
+            .catch(function () { return null; });
+        var timeout = new Promise(function (res) { setTimeout(function () { res(null); }, 500); });
+        return Promise.race([meta, timeout]);
+    }
+
+    function fetchBytes(url) {
+        // Cache bypass for the same reason cve-sync.js does it: the file's
+        // identity is fixed by the manifest we just read, so a stale cache entry
+        // would surface as an unexplainable hash mismatch.
+        return fetch(url, { cache: 'no-store' }).then(function (res) {
+            if (!res.ok) {
+                var e = new Error('HTTP ' + res.status + ' ' + (res.statusText || '') + ' for ' + url);
+                e.status = res.status;
+                e.url = url;
+                throw e;
+            }
+            return res.arrayBuffer();
+        });
+    }
+
+    function needSync() {
+        if (!window.CveSync) {
+            throw new Error('js/cve-sync.js is not loaded, so the manifest cannot be read or verified.');
+        }
+        return window.CveSync;
+    }
+
+    function statsEntry(m) {
+        var e = obj(m && m.stats);
+        if (!e) return null;
+        var file = typeof e.file === 'string' ? e.file : '';
+        // Untrusted path, exactly as cve-sync.js treats shard paths: relative
+        // only, no host switching, no climbing out of the published tree.
+        if (!file || /^[a-z][a-z0-9+.-]*:/i.test(file) || file.charAt(0) === '/' || file.indexOf('..') !== -1) return null;
+        return {
+            file: file,
+            sha256: (typeof e.sha256 === 'string' && HEX64.test(e.sha256.toLowerCase())) ? e.sha256.toLowerCase() : '',
+            bytes: isInt(e.bytes) ? e.bytes : null,
+        };
+    }
+
+    function load() {
+        var sync = needSync();
+        var base = app.base;
+
+        // Both requests leave at once. §11 fixes the stats path, so the
+        // speculative fetch is right almost always; when the manifest names
+        // something else the guess is dropped and the named file is fetched.
+        var guessUrl = base + '/' + STATS_GUESS;
+        var guess = fetchBytes(guessUrl).then(
+            function (buf) { return { ok: true, buf: buf }; },
+            function (err) { return { ok: false, err: err }; }
+        );
+
+        return sync.manifest(base).then(function (m) {
+            app.manifest = m;
+            paintProvenance();
+
+            var entry = statsEntry(m);
+            var url, bytesP;
+            if (entry) {
+                url = base + '/' + entry.file;
+                bytesP = (entry.file === STATS_GUESS)
+                    ? guess.then(function (g) { if (!g.ok) throw g.err; return g.buf; })
+                    : fetchBytes(url);
+            } else {
+                // A manifest with no `stats` key is either an older publisher or
+                // a build where the stats step failed. If the conventional file
+                // is nevertheless there and self-consistent it is still worth
+                // showing — loudly labelled as unlisted.
+                url = guessUrl;
+                bytesP = guess.then(function (g) {
+                    if (!g.ok) {
+                        var e = new Error('This mirror\'s manifest has no "stats" entry, and ' + guessUrl +
+                            ' is not there either (' + (g.err && g.err.message ? g.err.message : 'fetch failed') + ').');
+                        e.noStats = true;
+                        throw e;
+                    }
+                    return g.buf;
+                });
+            }
+            app.statsUrl = url;
+
+            return bytesP.then(function (buf) {
+                app.statsBytes = buf.byteLength;
+                var expect = entry ? entry.sha256 : '';
+                if (!expect) {
+                    app.verified = null;
+                    app.verifyNote = entry
+                        ? 'The manifest lists this file without a sha256, so its bytes could not be checked.'
+                        : 'This file is not listed in the mirror\'s manifest, so its bytes could not be checked against a published hash.';
+                    return buf;
+                }
+                return sync.sha256Hex(buf).then(function (got) {
+                    if (got !== expect) {
+                        var e = new Error('SHA-256 mismatch for ' + url + '.\nexpected ' + expect + '\ngot      ' + got);
+                        e.hashMismatch = true;
+                        app.verified = false;
+                        throw e;
+                    }
+                    app.verified = true;
+                    return buf;
+                }, function (err) {
+                    // No Web Crypto (a plain-http intranet). The figures are still
+                    // worth showing — nothing is stored from them — but the page
+                    // says, in the provenance strip, that they were not verified.
+                    app.verified = null;
+                    app.verifyNote = err && err.message ? err.message : String(err);
+                    return buf;
+                });
+            });
+        }).then(function (buf) {
+            return sync.gunzip(buf);
+        }).then(function (text) {
+            var parsed;
+            try {
+                parsed = JSON.parse(text);
+            } catch (e) {
+                throw new Error('stats.json is not valid JSON: ' + (e && e.message ? e.message : String(e)));
+            }
+            if (!obj(parsed)) throw new Error('stats.json is not a JSON object.');
+            if (parsed.version !== 1) {
+                throw new Error('stats.json says version ' + JSON.stringify(parsed.version) +
+                    '; this page can only read version 1. Update the page, or point at a mirror publishing version 1.');
+            }
+            app.stats = parsed;
+            return parsed;
+        });
+    }
+
+    /* ---- error surface -------------------------------------------------- */
+
+    function showError(err) {
+        var boot = $('boot');
+        clear(boot);
+        var card = el('div', 'card err');
+        var msg = (err && err.message) ? err.message : String(err);
+
+        var heading = 'The statistics could not be loaded';
+        var what = [];
+
+        if (err && err.noStats) {
+            heading = 'This mirror publishes no statistics';
+            what = [
+                'The mirror answered, and its manifest is valid — it simply carries no stats.json. That file is written by tools/publish.mjs on every run, so a mirror without one is running an older publisher or its last build did not finish.',
+                'Ask whoever runs this mirror to publish a build that writes stats.json, or point this page at another mirror below.',
+            ];
+        } else if (err && err.hashMismatch) {
+            heading = 'The statistics file does not match its published hash';
+            what = [
+                'The bytes that arrived are not the bytes the manifest describes. Nothing is shown, because a figure computed from an unverified file is worth less than no figure at all.',
+                'Usually this is a half-finished publish or a caching proxy in the way. Reload in a minute; if it persists, the mirror is serving a corrupt file.',
+            ];
+        } else if (err && err.status === 404) {
+            heading = 'The statistics file is not on this mirror';
+            what = ['The manifest names a file the mirror does not serve. That is a broken publish, not a network problem.'];
+        } else if (/DecompressionStream/.test(msg)) {
+            heading = 'This browser cannot read the published format';
+            what = [
+                'Every file in this corpus is gzipped inside the artifact rather than by the transport, so that the bytes are identical whether they come from a CDN, an nginx in a basement, or a USB stick. Reading them needs DecompressionStream, which this browser does not have.',
+                'Any current Firefox, Chrome, Edge or Safari 16.4+ will read it.',
+            ];
+        } else if (/can only read version 1/.test(msg)) {
+            heading = 'This mirror publishes a newer statistics format';
+            what = [
+                'The file is there and it arrived intact — this page simply does not know how to read it. §11 of the contract fixes the shape of version 1; a version 2 may have moved or removed the fields these charts are built from, and drawing them anyway would be guessing.',
+                'Update this page from the CVE repository, or point at a mirror still publishing version 1.',
+            ];
+        } else if (/Malformed manifest/.test(msg)) {
+            heading = 'That address does not serve a CVE corpus';
+            what = [
+                'Something answered, but it was not a version-1 manifest. A captive portal or a 404 page returns HTML with a 200 status, which looks exactly like this.',
+            ];
+        } else if (err && (err instanceof TypeError || /Failed to fetch|NetworkError|Load failed/i.test(msg))) {
+            heading = 'The mirror could not be reached';
+            what = [
+                'The request never completed. Either the network is down, the address is wrong, or the mirror does not send access-control-allow-origin — a browser cannot read a cross-origin file without it. (This is why the corpus is served from GitHub Pages and not from Release assets: Pages sends the header, Releases do not.)',
+            ];
+        } else {
+            what = ['This page fetches exactly two files and does nothing else, so the failure is in one of them.'];
+        }
+
+        card.appendChild(el('h2', null, heading));
+        card.appendChild(el('div', 'why', msg));
+        var ul = el('ul');
+        what.forEach(function (w) { ul.appendChild(el('li', null, w)); });
+        card.appendChild(ul);
+
+        card.appendChild(mirrorBox());
+        boot.appendChild(card);
+        paintProvenance();
+    }
+
+    /* The mirror control exists only in the error state and only for this page:
+       it changes where these two files are read from, and it deliberately does
+       NOT write meta.mirror — the CVE app's source of data is the user's choice
+       made in the Data dialog, not a side effect of visiting a stats page. The
+       address rides in the URL instead, so a working one can be bookmarked. */
+    function mirrorBox() {
+        var box = el('div', 'mirrorbox');
+        var input = document.createElement('input');
+        input.type = 'url';
+        input.value = app.base;
+        input.placeholder = DEFAULT_MIRROR;
+        input.spellcheck = false;
+        input.setAttribute('aria-label', 'Mirror address');
+        var go = el('button', 'btn', 'Retry');
+        go.type = 'button';
+        var reset = el('button', 'btn', 'Default mirror');
+        reset.type = 'button';
+
+        var apply = function (value) {
+            var v = String(value || '').trim().replace(/\/+$/, '');
+            if (!/^https?:\/\/[^\s]+$/i.test(v)) {
+                input.focus();
+                return;
+            }
+            var url = window.location.pathname + (v === DEFAULT_MIRROR ? '' : '?mirror=' + encodeURIComponent(v));
+            window.location.href = url;
+        };
+        go.addEventListener('click', function () { apply(input.value); });
+        reset.addEventListener('click', function () { apply(DEFAULT_MIRROR); });
+        input.addEventListener('keydown', function (e) { if (e.key === 'Enter') apply(input.value); });
+
+        box.appendChild(input);
+        box.appendChild(go);
+        box.appendChild(reset);
+        return box;
+    }
+
+    /* ==================================================================
+       THE PANELS
+       ================================================================== */
+
+    /* ---- 01 · the backlog --------------------------------------------- */
+
+    function panelBacklog(st) {
+        var b = obj(st.backlog);
+        var sec = panel('backlog', '01 · The backlog', 'What is not analysed yet',
+            'NVD publishes a CVE long before it analyses one. Until that analysis lands the record has no NVD CVSS, no CWE and no CPE — it is a title and a date. This is the first panel because it is the largest single caveat on every other number here, and because there is no other self-hostable public tracker of it.');
+
+        // A missing backlog block costs the backlog figures and nothing else:
+        // status and lag are their own measurements and still stand.
+        if (!b) {
+            sec.appendChild(el('div', 'banner', 'This snapshot publishes no backlog block, so the queue size is unknown here. Absent, not zero — the status table below is still measured.'));
+        }
+
+        var unenriched = (b && isNum(b.unenriched)) ? b.unenriched : null;
+        var total = (b && isNum(b.total)) ? b.total : null;
+        var pct = (b && isNum(b.pct)) ? b.pct : share(unenriched, total);
+
+        if (b) tiles(sec, [
+            { k: 'Unenriched', v: fmtNum(unenriched), gold: true, s: 'records with no NVD analysis' },
+            { k: 'Of a corpus of', v: fmtNum(total), s: 'records counted for the backlog' },
+            { k: 'Share', v: fmtPct(pct, 2), s: (b && isNum(b.pct)) ? 'as published' : 'computed from the two counts above' },
+            { k: 'Enriched', v: (isNum(unenriched) && isNum(total)) ? fmtNum(total - unenriched) : '—', s: 'the difference, nothing more' },
+        ]);
+
+        // --- by month: stacked columns, plus the share as its own line ---
+        var months = arr(b && b.byMonth).filter(function (r) { return obj(r) && typeof r.ym === 'string'; });
+        var bad = [];
+        var cats = [];
+        months.forEach(function (r) {
+            var t = isNum(r.total) ? r.total : null;
+            var u = isNum(r.unenriched) ? r.unenriched : null;
+            if (t == null || u == null) { bad.push(r.ym + ' (a count is missing)'); return; }
+            if (u > t) { bad.push(r.ym + ' (unenriched ' + fmtNum(u) + ' exceeds total ' + fmtNum(t) + ')'); return; }
+            cats.push({ label: ymLabel(r.ym), title: ymLabel(r.ym), ym: r.ym, values: [u, t - u], total: t, un: u });
+        });
+
+        if (cats.length) {
+            var series = [
+                { key: 'un', label: 'Unenriched', color: GOLD },
+                { key: 'en', label: 'Enriched', color: DIM },
+            ];
+            figure(sec, {
+                title: 'The backlog by publication month',
+                sub: 'Each column is one month of published CVEs, split by whether NVD has analysed them yet. The gold is the queue.',
+                legend: [{ color: GOLD, label: 'Unenriched' }, { color: DIM, label: 'Enriched' }],
+                scrollEnd: true,
+                build: function (w) {
+                    return columns(w, {
+                        cats: cats, series: series, stacked: true, height: 160, minBarW: 7, gap: 2,
+                        xLabel: function (c) { return /-01$/.test(c.ym) ? c.ym.slice(0, 4) : null; },
+                        aria: 'Stacked columns: unenriched and enriched CVEs per publication month, ' +
+                            cats[0].ym + ' to ' + cats[cats.length - 1].ym + '.',
+                    });
+                },
+                note: bad.length ? 'Months left out because their published counts do not add up: ' + bad.join(', ') + '.' : '',
+                table: {
+                    summary: 'Show the numbers (' + cats.length + ' months)',
+                    head: ['Month', 'Published', 'Unenriched', 'Share'],
+                    align: ['', 'n', 'n', 'n'],
+                    rows: cats.map(function (c) {
+                        return [c.ym, fmtNum(c.total), fmtNum(c.un), fmtPct(share(c.un, c.total), 1)];
+                    }),
+                },
+            });
+
+            figure(sec, {
+                title: 'Share of each month still unenriched',
+                sub: 'The same data as a rate. A month at the right-hand end is young: some of its queue is simply not old enough to have been analysed yet, and that is part of the shape.',
+                scrollEnd: true,
+                build: function (w) {
+                    return linechart(w, {
+                        pts: cats.map(function (c) {
+                            return { label: ymLabel(c.ym), ym: c.ym, y: share(c.un, c.total), n: c.total };
+                        }),
+                        min: 0, max: 100, height: 120, minStep: 5, color: GOLD,
+                        fmtTick: function (v) { return Math.round(v) + '%'; },
+                        fmtValue: function (v) { return v.toFixed(1) + '%'; },
+                        xLabel: function (p) { return /-01$/.test(p.ym) ? p.ym.slice(0, 4) : null; },
+                        aria: 'Line: percentage of each month\'s CVEs that are unenriched.',
+                    });
+                },
+                note: 'n is each month\'s published count and is carried in the tooltip of every point; the table above lists all of them.',
+            });
+        }
+
+        // --- status composition ---
+        var status = obj(st.status);
+        if (status) {
+            var keys = Object.keys(status).filter(function (k) { return isNum(status[k]); });
+            keys.sort(function (a, c) { return status[c] - status[a]; });
+            var sum = keys.reduce(function (a, k) { return a + status[k]; }, 0);
+            figure(sec, {
+                title: 'Where every record sits in NVD\'s queue',
+                sub: 'vulnStatus, verbatim from NVD, over ' + fmtNum(sum) + ' records. These are the states the backlog count is drawn from.',
+                build: function (w) {
+                    return hbars(w, {
+                        rows: keys.map(function (k) {
+                            var v = status[k];
+                            return {
+                                label: k,
+                                bars: [{
+                                    value: v,
+                                    color: /Analy(z|s)ed|Modified/.test(k) ? DIM : GOLD,
+                                    value_text: fmtNum(v),
+                                    tipText: fmtNum(v) + ' (' + fmtPct(share(v, sum), 1) + ')',
+                                }],
+                            };
+                        }),
+                        aria: 'Horizontal bars: record count per NVD vulnStatus.',
+                    });
+                },
+                table: {
+                    head: ['vulnStatus', 'Records', 'Share'],
+                    align: ['', 'n', 'n'],
+                    rows: keys.map(function (k) { return [k, fmtNum(status[k]), fmtPct(share(status[k], sum), 2)]; }),
+                },
+            });
+        }
+
+        // --- lag ---
+        var lag = obj(st.lag);
+        if (lag) {
+            var byYear = arr(lag.byYear).filter(function (r) { return obj(r) && isInt(r.year) && isNum(r.medianDays); });
+            var lagN = nOf(lag);
+            var anyYearN = byYear.some(function (r) { return nOf(r) != null; });
+            tiles(sec, [
+                { k: 'Median lag', v: fmtDays(lag.medianDays), gold: true, s: 'publication → last modification · ' + nText(lagN) },
+                { k: 'p90 lag', v: fmtDays(lag.p90Days), s: 'nine in ten land inside this · ' + nText(lagN) },
+            ]);
+            if (byYear.length) {
+                figure(sec, {
+                    title: 'Median days from publication to last modification, by year',
+                    sub: 'What the corpus records is `lastModified`, which is the most recent touch of any kind — a first analysis for a new record, but a re-score or a CPE correction for an old one. Read the early years as "how long ago NVD last revisited 1999", not as a delay anyone waited through.',
+                    caveatLead: 'Sample size:',
+                    caveat: anyYearN
+                        ? 'Each point carries the number of records its median was taken over: it is in the tooltip, in the n column of the table below, and it is what makes an early year\'s spike readable as ten records rather than a decade going wrong.'
+                        : 'This snapshot publishes no n for these medians, so this page prints none. A median without its sample size is a shape, not a measurement.',
+                    build: function (w) {
+                        return linechart(w, {
+                            pts: byYear.map(function (r) { return { label: String(r.year), y: r.medianDays, n: nOf(r) }; }),
+                            min: 0, height: 130, minStep: 26, color: GOLD,
+                            fmtTick: function (v) { return Math.round(v) + 'd'; },
+                            fmtValue: function (v) { return fmtDays(v); },
+                            aria: 'Line: median days from publication to NVD analysis, per year.',
+                        });
+                    },
+                    table: {
+                        head: ['Year', 'Median days', 'p90 days', 'n'],
+                        align: ['', 'n', 'n', 'n'],
+                        rows: byYear.map(function (r) {
+                            var n = nOf(r);
+                            return [r.year, fmtNum(r.medianDays), isNum(r.p90Days) ? fmtNum(r.p90Days) : 'not published',
+                                n == null ? 'not published' : fmtNum(n)];
+                        }),
+                    },
+                });
+            }
+        }
+
+        if (!b) return;
+        var d = el('div', 'banner');
+        d.appendChild(el('b', null, 'Rule 4, and it binds the rest of this page. '));
+        d.appendChild(document.createTextNode(
+            'Everything below is computed over a corpus that includes these unenriched records. They are never dropped to make a chart tidier: ' +
+            'in the severity panel they appear in their own "none / unrated" column, and in the CWE panel they simply carry no CWE. ' +
+            'A severity split that quietly excluded them would report a cleaner, wronger world.'));
+        $('banners').appendChild(d);
+    }
+
+    /* ---- 02 · KEV ------------------------------------------------------ */
+
+    function panelKev(st) {
+        var kev = obj(st.kev);
+        var sec = panel('kev', '02 · Known exploited', 'Severity is not a work queue',
+            'CISA\'s KEV catalogue lists what is being exploited in the wild. It is a fraction of a percent of all CVEs, and it is not the same set as the critical ones — which is the entire argument against triaging by CVSS band alone.');
+
+        if (!kev) {
+            sec.appendChild(el('div', 'banner',
+                'This snapshot carries no KEV block. The publisher omits the key when CISA KEV could not be fetched, rather than writing zeros — so this is unknown, not none.'));
+            return;
+        }
+
+        var sev = obj(st.severity) || {};
+        /* Two different numbers that a careless read folds into one: `count` is
+           how many entries CISA's catalogue holds, `inCorpus` is how many of
+           them this corpus actually contains. `overlapPct` is computed from the
+           second, so printing the first beside it produced a tile and a
+           percentage that flatly contradicted each other. */
+        var catalogue = isNum(kev.count) ? kev.count : null;
+        var inCorpus = isNum(kev.inCorpus) ? kev.inCorpus : null;
+
+        /* The cross-tab. `severityAtPublish` is the severity a record carried
+           when CISA listed it; the publisher writes null there on purpose,
+           because a shard holds one severity per record — today's — and NVD
+           rescores after the fact, so that question is unanswerable from this
+           corpus. What it does publish is `severityNow`, under a name that says
+           what it is. The figure reads whichever is present and labels itself
+           accordingly rather than declaring a published cross-tab missing. */
+        var atPub = obj(kev.severityAtPublish);
+        var now = obj(kev.severityNow);
+        var xtab = atPub || now || {};
+        var xtabName = atPub ? 'severityAtPublish' : (now ? 'severityNow' : null);
+
+        // The denominator for "share of KEV" is the population the cross-tab
+        // counts — corpus records that are in KEV — so it is summed from the
+        // cross-tab itself and never from the catalogue size.
+        var xtabTotal = SEV_ORDER.reduce(function (a, k) { return a + (isNum(xtab[k]) ? xtab[k] : 0); }, 0);
+        var kevDenom = xtabTotal > 0 ? xtabTotal : inCorpus;
+        var overlap = isNum(kev.overlapPct) ? kev.overlapPct : share(inCorpus, st.records);
+
+        tiles(sec, [
+            { k: 'In CISA KEV', v: fmtNum(catalogue), gold: true, s: 'entries in the catalogue CISA published' },
+            {
+                k: 'Of those, in this corpus', v: fmtNum(inCorpus),
+                s: inCorpus == null ? 'not published in this snapshot' : 'of ' + fmtNum(st.records) + ' records',
+            },
+            { k: 'Overlap', v: fmtPct(overlap, 2), s: isNum(kev.overlapPct) ? 'as published' : 'computed from the counts' },
+            {
+                k: 'Critical CVEs', v: fmtNum(sev.CRITICAL),
+                s: isNum(xtab.CRITICAL) && isNum(sev.CRITICAL)
+                    ? fmtNum(xtab.CRITICAL) + ' of them are in KEV (' + fmtPct(share(xtab.CRITICAL, sev.CRITICAL), 2) + ')'
+                    : 'KEV share not published for this band',
+            },
+        ]);
+
+        var rows = [];
+        var tableRows = [];
+        SEV_ORDER.forEach(function (k) {
+            var all = isNum(sev[k]) ? sev[k] : null;
+            var inKev = isNum(xtab[k]) ? xtab[k] : null;
+            var allShare = share(all, st.records);
+            var kevShare = share(inKev, kevDenom);
+            rows.push({
+                label: SEV_LABEL[k] || k,
+                sub: (all != null && inKev != null)
+                    ? fmtNum(inKev) + ' of ' + fmtNum(all) + ' known-exploited (' + fmtPct(share(inKev, all), 3) + ')'
+                    : 'cross-tab not published for this band',
+                bars: [
+                    {
+                        value: allShare == null ? 0 : allShare, missing: allShare == null,
+                        color: SEV_COLOR[k], label: 'share of all records',
+                        value_text: fmtPct(allShare, 1), tipText: fmtNum(all) + ' records, ' + fmtPct(allShare, 2) + ' of the corpus',
+                    },
+                    {
+                        value: kevShare == null ? 0 : kevShare, missing: kevShare == null,
+                        color: INFO, label: 'share of KEV',
+                        value_text: fmtPct(kevShare, 1), tipText: fmtNum(inKev) + ' KEV entries, ' + fmtPct(kevShare, 2) + ' of KEV',
+                    },
+                ],
+            });
+            tableRows.push([
+                SEV_LABEL[k] || k, fmtNum(all), fmtPct(allShare, 2),
+                inKev == null ? 'not published' : fmtNum(inKev),
+                fmtPct(kevShare, 2), fmtPct(share(inKev, all), 3),
+            ]);
+        });
+
+        figure(sec, {
+            title: 'The corpus and the KEV catalogue, band by band',
+            sub: 'Two shares per severity band: how much of the whole corpus it is, and how much of KEV it is. If severity were a work queue these two bars would match.',
+            caveatLead: 'Read this the right way round.',
+            caveat: 'The bars are shares of two different populations, so their heights are not comparable to each other in absolute terms — the line under each band gives the number that is: how many of that band\'s records are actually known to be exploited.' +
+                (xtabName === 'severityNow'
+                    ? ' The bands are each record\'s severity today, not the severity it carried on the day CISA listed it: NVD rescores records after the fact, and a corpus that keeps one severity per record cannot remember the earlier one.'
+                    : ''),
+            legend: [{ color: SEV_COLOR.CRITICAL, label: 'share of all records (band colour)' }, { color: INFO, label: 'share of KEV' }, { hollow: true, label: 'not published' }],
+            build: function (w) {
+                return hbars(w, { rows: rows, max: 100, barH: 10, rowPad: 16, valueW: 68, aria: 'Grouped horizontal bars: each severity band as a share of the whole corpus and as a share of the KEV catalogue.' });
+            },
+            table: {
+                head: ['Band', 'Records', '% of corpus', 'In KEV', '% of KEV', '% of band in KEV'],
+                align: ['', 'n', 'n', 'n', 'n', 'n'],
+                rows: tableRows,
+                caption: xtabName === 'severityNow'
+                    ? 'severityNow is the severity each known-exploited record carries in this snapshot. severityAtPublish — the severity it carried when CISA listed it — is not published, because this corpus does not remember it.'
+                    : (xtabName === 'severityAtPublish'
+                        ? 'severityAtPublish is the severity the record carried when it was published — not a re-score after the exploitation was known.'
+                        : 'This snapshot publishes no severity cross-tab for the KEV catalogue.'),
+            },
+        });
+
+        var ttk = obj(kev.timeToKevDays);
+        if (ttk) {
+            var med = isNum(ttk.medianDays) ? ttk.medianDays : null;
+            var p90 = isNum(ttk.p90Days) ? ttk.p90Days : null;
+            var ttkN = nOf(ttk);
+            tiles(sec, [
+                { k: 'Median time to KEV', v: fmtDays(med), gold: true, s: 'from publication to the CISA listing · ' + nText(ttkN) },
+                { k: 'p90 time to KEV', v: fmtDays(p90), s: nText(ttkN) },
+            ]);
+            figure(sec, {
+                title: 'How long a CVE waits before CISA calls it exploited',
+                sub: 'Two published order statistics on one scale. Nothing between them is measured, so nothing between them is drawn.',
+                caveatLead: 'Sample size:',
+                caveat: ttkN != null
+                    ? 'Both figures are taken over the ' + fmtNum(ttkN) + ' record(s) that are in this corpus, are in the KEV catalogue, and carry a readable date at both ends — not over the ' + fmtNum(catalogue) + ' entries of the catalogue as a whole.'
+                    : 'This snapshot publishes no n for these two figures. The population is at most the ' + fmtNum(catalogue) + ' KEV entries, but "at most" is not a sample size, so none is printed.',
+                build: function (w) {
+                    return hbars(w, {
+                        rows: [
+                            { label: 'Median', bars: [{ value: med == null ? 0 : med, missing: med == null, color: GOLD, value_text: fmtDays(med) }] },
+                            { label: 'p90', bars: [{ value: p90 == null ? 0 : p90, missing: p90 == null, color: INFO, value_text: fmtDays(p90) }] },
+                        ],
+                        max: p90 != null ? p90 : (med != null ? med : 1),
+                        barH: 13, rowPad: 14, valueW: 84,
+                        aria: 'Two horizontal bars: median and 90th-percentile days from publication to KEV listing.',
+                    });
+                },
+            });
+        }
+
+        // EPSS rides here rather than in its own panel: it answers the same
+        // question as KEV — is anyone going to attack this — and it is only
+        // legible next to the catalogue it is trying to predict.
+        var epss = obj(st.epss);
+        if (epss) {
+            var buckets = arr(epss.buckets).filter(function (r) { return obj(r) && isNum(r.count); });
+            var epssN = nOf(epss);
+            var epssNoScore = nOf(epss, 'noScore');
+            tiles(sec, [
+                { k: 'EPSS median · KEV', v: isNum(epss.kevMedian) ? epss.kevMedian.toFixed(3) : '—', gold: true, s: nText(nOf(epss, 'kevN')) },
+                { k: 'EPSS median · not in KEV', v: isNum(epss.nonKevMedian) ? epss.nonKevMedian.toFixed(3) : '—', s: nText(nOf(epss, 'nonKevN')) },
+            ]);
+            if (buckets.length) {
+                figure(sec, {
+                    title: 'Exploit-prediction scores across the corpus',
+                    sub: 'FIRST\'s EPSS: the modelled probability of exploitation in the next 30 days. Note the axis — almost everything sits in the lowest bucket, which is what makes the tail interesting.' +
+                        (epssN != null ? ' Drawn over the ' + fmtNum(epssN) + ' records that carry a score.' : ''),
+                    caveatLead: 'A model, not an observation.',
+                    caveat: 'EPSS is a prediction; KEV is a report of something that happened. They disagree often, and where they do, KEV wins.' +
+                        (epssNoScore
+                            ? ' The columns below hold only scored records: ' + fmtNum(epssNoScore) +
+                              ' record(s) in this corpus carry no EPSS score at all, and they are absent from the chart rather than poured into the lowest bucket — no score is not a score of zero.'
+                            : ''),
+                    build: function (w) {
+                        return columns(w, {
+                            cats: buckets.map(function (r) {
+                                var lo = isNum(r.lo) ? r.lo : 0, hi = isNum(r.hi) ? r.hi : 0;
+                                return { label: lo.toFixed(1), title: lo.toFixed(2) + '–' + hi.toFixed(2), values: [r.count] };
+                            }),
+                            series: [{ key: 'count', label: 'CVEs', color: INFO }],
+                            stacked: true, height: 140, minBarW: 14, gap: 3,
+                            aria: 'Columns: number of CVEs per EPSS score bucket.',
+                        });
+                    },
+                    table: {
+                        head: ['Bucket', 'CVEs'],
+                        align: ['', 'n'],
+                        rows: buckets.map(function (r) {
+                            return [(isNum(r.lo) ? r.lo.toFixed(2) : '—') + ' – ' + (isNum(r.hi) ? r.hi.toFixed(2) : '—'), fmtNum(r.count)];
+                        }).concat(epssNoScore == null ? [] : [['No EPSS score (its own row, never a bucket)', fmtNum(epssNoScore)]]),
+                    },
+                });
+            }
+        }
+    }
+
+    /* ---- 03 · volume --------------------------------------------------- */
+
+    function panelVolume(st) {
+        var sec = panel('volume', '03 · Volume', 'How much gets published',
+            'The count of CVEs is a count of disclosure activity, not of insecurity. It rises when more people look, when more vendors become CNAs, and when a single researcher files a thousand records in a week.');
+
+        var months = arr(st.byMonth).filter(function (r) { return obj(r) && typeof r.ym === 'string' && isNum(r.published); });
+        if (months.length) {
+            figure(sec, {
+                title: 'CVEs published per month',
+                sub: 'Every month in the corpus, oldest at the left. The chart scrolls; it opens at the recent end.',
+                scrollEnd: true,
+                build: function (w) {
+                    return columns(w, {
+                        cats: months.map(function (r) { return { label: ymLabel(r.ym), title: ymLabel(r.ym), ym: r.ym, values: [r.published] }; }),
+                        series: [{ key: 'p', label: 'Published', color: GOLD }],
+                        stacked: true, height: 150, minBarW: 5, gap: 1,
+                        xLabel: function (c) { return /-01$/.test(c.ym) ? c.ym.slice(0, 4) : null; },
+                        aria: 'Columns: CVEs published per month from ' + months[0].ym + ' to ' + months[months.length - 1].ym + '.',
+                    });
+                },
+                table: {
+                    summary: 'Show the numbers (' + months.length + ' months)',
+                    head: ['Month', 'Published'],
+                    align: ['', 'n'],
+                    rows: months.map(function (r) { return [r.ym, fmtNum(r.published)]; }),
+                },
+            });
+        }
+
+        var years = arr(st.byYear).filter(function (r) { return obj(r) && isInt(r.year); });
+        if (years.length) {
+            /* Rule 2, on the one field of this file that is legitimately null:
+               a year whose rejections were never counted draws no rejected bar,
+               and an absent bar looks exactly like a bar of zero. The publisher
+               writes `rejected: null` when a delta run had no earlier full build
+               to add its increment to, so this says which years those are rather
+               than letting the gap read as "nothing was ever withdrawn". */
+            var noRej = years.filter(function (r) { return !isNum(r.rejected); }).map(function (r) { return r.year; });
+            var rejNote = '';
+            if (noRej.length === years.length) {
+                rejNote = 'No year in this snapshot publishes a rejection count, so the purple series is empty here — unknown, not zero. '
+                    + 'Rejected records never enter the corpus, so the publisher can only count them as they stream past during a full pull; '
+                    + 'a snapshot built incrementally, with no earlier full build to carry forward, has none to report.';
+            } else if (noRej.length) {
+                rejNote = 'No rejection count is published for ' + noRej.length + ' of these years ('
+                    + noRej.join(', ') + '), so they draw no purple bar at all — unknown, not zero. The table lists them as "not published".';
+            }
+            figure(sec, {
+                title: 'Published and rejected, per year',
+                sub: 'Rejected records are excluded from the corpus itself (contract §3), so they are counted here and nowhere else on this page.',
+                caveatLead: 'Two series, never one.',
+                caveat: 'Rejections are not failures of the published set — a CVE is withdrawn when it turns out to be a duplicate or not a vulnerability. Adding the two bars together would count records that no longer exist.',
+                legend: [{ color: GOLD, label: 'Published' }, { color: '#7c3aed', label: 'Rejected' }],
+                note: rejNote,
+                build: function (w) {
+                    return columns(w, {
+                        cats: years.map(function (r) {
+                            return { label: String(r.year), title: String(r.year), values: [isNum(r.published) ? r.published : 0, isNum(r.rejected) ? r.rejected : 0] };
+                        }),
+                        series: [{ key: 'p', label: 'Published', color: GOLD }, { key: 'r', label: 'Rejected', color: '#7c3aed' }],
+                        stacked: false, height: 150, minBarW: 10, gap: 3,
+                        xLabel: function (c, i) { return (years.length <= 14 || i % 2 === 0) ? c.label : null; },
+                        aria: 'Paired columns per year: CVEs published and CVEs rejected.',
+                    });
+                },
+                table: {
+                    head: ['Year', 'Published', 'Rejected'],
+                    align: ['', 'n', 'n'],
+                    rows: years.map(function (r) { return [r.year, fmtNum(r.published), isNum(r.rejected) ? fmtNum(r.rejected) : 'not published']; }),
+                },
+            });
+        }
+    }
+
+    /* ---- 04 · severity and drift --------------------------------------- */
+
+    function panelSeverity(st) {
+        var sec = panel('severity', '04 · Severity', 'The distribution, and what "none" means',
+            'Two things that look alike and are not: a record with no CVSS at all, and a record scored at the bottom of the scale. They are counted separately here and are never added together.');
+
+        var sev = obj(st.severity);
+        var q = obj(st.quality) || {};
+
+        if (sev) {
+            var totalSev = SEV_ORDER.reduce(function (a, k) { return a + (isNum(sev[k]) ? sev[k] : 0); }, 0);
+            var rows = SEV_ORDER.map(function (k) {
+                var v = isNum(sev[k]) ? sev[k] : null;
+                return {
+                    label: SEV_LABEL[k] || k,
+                    bars: [{
+                        value: v == null ? 0 : v, missing: v == null, color: SEV_COLOR[k],
+                        value_text: fmtNum(v), tipText: fmtNum(v) + ' (' + fmtPct(share(v, totalSev), 2) + ' of the corpus)',
+                    }],
+                };
+            });
+            if (isNum(q.noCvss)) {
+                rows.push({
+                    label: 'No CVSS at all',
+                    sub: 'quality.noCvss — beside the bands, never inside them',
+                    bars: [{ value: q.noCvss, color: '#475569', value_text: fmtNum(q.noCvss), tipText: fmtNum(q.noCvss) + ' records carry no CVSS metric of any version' }],
+                });
+            }
+
+            figure(sec, {
+                title: 'Severity distribution',
+                sub: 'Counts across the whole corpus, ' + fmtNum(totalSev) + ' records in the five published bands.',
+                caveatLead: 'Missing is not zero.',
+                caveat: '"None / unrated" is the severity band a record was published with; "No CVSS at all" counts records carrying no CVSS metric of any version. Where the two differ, the difference is records that do carry a vector — a score of 0.0 is a measurement, an absent score is not. This page never merges the two columns and never sums them.',
+                build: function (w) {
+                    return hbars(w, { rows: rows, barH: 13, rowPad: 15, aria: 'Horizontal bars: record counts per severity band, with records carrying no CVSS shown as a separate row.' });
+                },
+                table: {
+                    head: ['Band', 'Records', 'Share of corpus'],
+                    align: ['', 'n', 'n'],
+                    rows: SEV_ORDER.map(function (k) {
+                        return [SEV_LABEL[k] || k, isNum(sev[k]) ? fmtNum(sev[k]) : 'not published', fmtPct(share(sev[k], totalSev), 2)];
+                    }).concat(isNum(q.noCvss) ? [['No CVSS at all (quality.noCvss)', fmtNum(q.noCvss), fmtPct(share(q.noCvss, st.records), 2)]] : []),
+                },
+            });
+        }
+
+        var byYear = arr(st.severityByYear).filter(function (r) { return obj(r) && isInt(r.year); });
+        if (byYear.length) {
+            figure(sec, {
+                title: 'Severity mix by year',
+                sub: 'Each column is one year normalised to 100%, so the shape is the mix rather than the volume. Grey is the unrated share — in the newest years it is largely the backlog from panel 01.',
+                legend: SEV_ORDER.map(function (k) { return { color: SEV_COLOR[k], label: SEV_LABEL[k] }; }),
+                build: function (w) {
+                    return columns(w, {
+                        cats: byYear.map(function (r) {
+                            return {
+                                label: String(r.year), title: String(r.year),
+                                values: SEV_ORDER.map(function (k) { return isNum(r[k]) ? r[k] : 0; }),
+                            };
+                        }),
+                        series: SEV_ORDER.map(function (k) { return { key: k, label: SEV_LABEL[k], color: SEV_COLOR[k] }; }),
+                        stacked: true, pct: true, height: 170, minBarW: 10, gap: 3,
+                        xLabel: function (c, i) { return (byYear.length <= 14 || i % 2 === 0) ? c.label : null; },
+                        aria: 'Stacked columns normalised to 100 percent: the severity mix of each year.',
+                    });
+                },
+                table: {
+                    head: ['Year'].concat(SEV_ORDER.map(function (k) { return SEV_LABEL[k]; })).concat(['Total']),
+                    align: ['', 'n', 'n', 'n', 'n', 'n', 'n'],
+                    rows: byYear.map(function (r) {
+                        var t = SEV_ORDER.reduce(function (a, k) { return a + (isNum(r[k]) ? r[k] : 0); }, 0);
+                        return [r.year].concat(SEV_ORDER.map(function (k) { return isNum(r[k]) ? fmtNum(r[k]) : 'n/p'; })).concat([fmtNum(t)]);
+                    }),
+                },
+            });
+        }
+
+        var drift = arr(st.cvssDrift).filter(function (r) { return obj(r) && isInt(r.year) && isNum(r.mean); });
+        if (drift.length) {
+            var nline = el('div', 'nline');
+            nline.appendChild(el('b', null, 'n by year: '));
+            nline.appendChild(document.createTextNode(drift.map(function (r) {
+                return r.year + ' ' + (isNum(r.n) ? fmtNum(r.n) : 'not published');
+            }).join(' · ')));
+
+            // Like the CNA table, this is measured during a full pull and
+            // carried forward by the delta runs between them, so it is stamped
+            // with the snapshot that actually measured it (§11 rule 3).
+            var driftFrom = carriedFrom(st);
+
+            /* `cvssDrift[].mean` is a *difference*, not a level: NVD's base
+               score minus the CNA's, averaged over the records of that year
+               that carry both scores. It sits around zero and goes negative.
+               Drawn on a 0–10 axis and called a mean base score it would say
+               the average CVE of 2002 scored 0.0 out of 10, which is not a
+               statistic that has been softened — it is a different number
+               entirely. So: a zero line, a symmetric axis wide enough for the
+               data, and a sign that is explained. */
+            var driftBound = drift.reduce(function (m, r) { return Math.max(m, Math.abs(r.mean)); }, 0);
+            driftBound = Math.max(0.5, Math.ceil(driftBound * 10) / 10);
+            var sign = function (v) { return (v > 0 ? '+' : '') + v.toFixed(2); };
+
+            figure(sec, {
+                title: 'Where NVD and the CNA disagree about severity',
+                sub: 'NVD\'s base score minus the CNA\'s, averaged over the records of each year that carry both. Above the line NVD scores it higher; below the line the CNA does; on the line the two agree on average.' +
+                    (driftFrom ? ' Measured on the snapshot of ' + ymd(driftFrom) + ', the last full rebuild, and carried forward unchanged since.' : ''),
+                measuredAt: driftFrom,
+                caveatLead: 'A difference, not a level.',
+                caveat: 'This is not the average severity of a CVE — it is the average gap between two opinions of the same CVE, so zero means agreement and not "no risk". Only records carrying both an NVD and a CNA score are in it, and the two are never compared across CVSS versions. The n under the chart is that population, which is far smaller than the year.',
+                build: function (w) {
+                    return linechart(w, {
+                        pts: drift.map(function (r) { return { label: String(r.year), y: r.mean, n: isNum(r.n) ? r.n : null }; }),
+                        min: -driftBound, max: driftBound, height: 140, minStep: 26, color: GOLD,
+                        fmtTick: function (v) { return sign(v); },
+                        fmtValue: function (v) { return sign(v) + ' points'; },
+                        aria: 'Line: mean difference between NVD and CNA CVSS base scores per year, centred on zero.',
+                    });
+                },
+                nodes: [nline],
+                table: {
+                    head: ['Year', 'Mean NVD − CNA', 'n (records scored by both)'],
+                    align: ['', 'n', 'n'],
+                    rows: drift.map(function (r) { return [r.year, sign(r.mean), isNum(r.n) ? fmtNum(r.n) : 'not published']; }),
+                },
+            });
+        }
+    }
+
+    /* ---- 05 · CWE ------------------------------------------------------ */
+
+    function panelCwe(st) {
+        var cwe = obj(st.cwe);
+        var sec = panel('cwe', '05 · Weaknesses', 'Which mistakes, and whether they move',
+            'CWE is the closest thing this dataset has to a cause. It is assigned by hand, so its coverage is a property of the analysis pipeline as much as of the code.');
+
+        if (!cwe) {
+            sec.appendChild(el('div', 'banner', 'This snapshot publishes no CWE block.'));
+            return;
+        }
+
+        var top = arr(cwe.top).filter(function (r) { return obj(r) && typeof r.id === 'string' && isNum(r.count); });
+        var q = obj(st.quality) || {};
+
+        if (top.length) {
+            figure(sec, {
+                title: 'The most-assigned weaknesses',
+                sub: 'Across the whole corpus. ' + (isNum(q.noCwe) ? fmtNum(q.noCwe) + ' records carry no CWE at all and are in none of these bars.' : ''),
+                build: function (w) {
+                    return hbars(w, {
+                        rows: top.map(function (r) {
+                            return {
+                                label: r.id, title: r.id,
+                                bars: [{ value: r.count, color: GOLD, value_text: fmtNum(r.count), tipText: fmtNum(r.count) + ' records (' + fmtPct(share(r.count, st.records), 2) + ' of the corpus)' }],
+                            };
+                        }),
+                        labelW: 84, barH: 11, rowPad: 9,
+                        aria: 'Horizontal bars: the most frequently assigned CWE identifiers.',
+                    });
+                },
+                nodes: [cweLinks(top)],
+                table: {
+                    head: ['CWE', 'Records', 'Share of corpus'],
+                    align: ['', 'n', 'n'],
+                    rows: top.map(function (r) { return [r.id, fmtNum(r.count), fmtPct(share(r.count, st.records), 2)]; }),
+                },
+            });
+        }
+
+        var byYear = arr(cwe.byYear).filter(function (r) { return obj(r) && isInt(r.year) && arr(r.top).length; });
+        if (byYear.length && top.length) {
+            figure(sec, heatFigure(st, top, byYear));
+        }
+    }
+
+    // The MITRE links are a separate row rather than SVG text: a link has to be
+    // focusable and copyable, and an <a> inside a chart is neither, reliably.
+    function cweLinks(top) {
+        var wrap = el('div', 'nline');
+        wrap.appendChild(el('b', null, 'Definitions: '));
+        top.slice(0, 12).forEach(function (r, i) {
+            if (i) wrap.appendChild(document.createTextNode(' · '));
+            var m = /^CWE-(\d+)$/.exec(r.id);
+            if (!m) { wrap.appendChild(document.createTextNode(r.id)); return; }
+            var a = el('a', null, r.id);
+            a.href = 'https://cwe.mitre.org/data/definitions/' + m[1] + '.html';
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            wrap.appendChild(a);
+        });
+        return wrap;
+    }
+
+    /* A rank heat-strip. The honest part is the empty cell: a per-year "top N"
+       says nothing about a CWE outside it, so a blank is drawn as an outlined
+       cell meaning unknown — never as a zero. */
+    function heatFigure(st, top, byYear) {
+        var ids = top.slice(0, 10).map(function (r) { return r.id; });
+        var years = byYear.slice().sort(function (a, b) { return a.year - b.year; });
+
+        var index = years.map(function (y) {
+            var map = {};
+            var maxCount = 0;
+            arr(y.top).forEach(function (e, i) {
+                if (!obj(e) || typeof e.id !== 'string') return;
+                map[e.id] = { count: isNum(e.count) ? e.count : null, rank: i + 1 };
+                if (isNum(e.count)) maxCount = Math.max(maxCount, e.count);
+            });
+            return { year: y.year, map: map, maxCount: maxCount, size: arr(y.top).length };
+        });
+
+        return {
+            title: 'Does the top ten move?',
+            sub: 'One row per weakness, one column per year, shaded by that weakness\'s share of the year\'s biggest entry. The number in the cell is its rank that year.',
+            caveatLead: 'An empty cell is unknown, not zero.',
+            caveat: 'stats.json publishes only a top list per year, so a weakness outside that year\'s list has no published count. Those cells are drawn hollow. Reading them as zero would invent a fall that was never measured.',
+            legend: [{ color: GOLD, label: 'rank 1 in that year' }, { color: 'rgba(234,179,8,0.25)', label: 'lower share' }, { hollow: true, label: 'not in that year\'s published top list' }],
+            scrollEnd: false,
+            build: function (w) {
+                var labelW = 74;
+                var cellH = 20, gap = 2;
+                // The gap belongs inside the per-column budget, or the strip is
+                // one gap-width too wide for its box at every screen size.
+                var cellW = Math.max(30, Math.min(64, Math.floor((w - labelW) / index.length) - gap));
+                var W = Math.max(w, labelW + index.length * (cellW + gap));
+                var H = 18 + ids.length * (cellH + gap) + 4;
+                var root = svgRoot(W, H, 'Heat map: rank of each top weakness within each year.');
+
+                index.forEach(function (y, c) {
+                    var x = labelW + c * (cellW + gap);
+                    root.appendChild(sText(x + cellW / 2, 11, String(y.year).slice(2), 'axl', 'middle'));
+                });
+                ids.forEach(function (id, r) {
+                    var yTop = 18 + r * (cellH + gap);
+                    root.appendChild(sText(0, yTop + cellH - 6, id, 'rl', 'start'));
+                    index.forEach(function (y, c) {
+                        var x = labelW + c * (cellW + gap);
+                        var hit = y.map[id];
+                        if (!hit) {
+                            var hollow = s('rect', { x: x, y: yTop, width: cellW, height: cellH, 'class': 'hollow', rx: 2 });
+                            tip(hollow, id + ' in ' + y.year + ': not in the published top ' + y.size + ' — unknown, not zero');
+                            root.appendChild(hollow);
+                            return;
+                        }
+                        var intensity = (isNum(hit.count) && y.maxCount > 0) ? hit.count / y.maxCount : 0.25;
+                        var cell = s('rect', {
+                            x: x, y: yTop, width: cellW, height: cellH, rx: 2,
+                            fill: GOLD, 'fill-opacity': (0.14 + 0.86 * intensity).toFixed(3),
+                        });
+                        tip(cell, id + ' in ' + y.year + ': rank ' + hit.rank + ' of ' + y.size +
+                            (isNum(hit.count) ? ', ' + fmtNum(hit.count) + ' records' : ', count not published'));
+                        root.appendChild(cell);
+                        var lbl = sText(x + cellW / 2, yTop + cellH - 6, '#' + hit.rank, 'axl', 'middle');
+                        lbl.setAttribute('fill', intensity > 0.55 ? '#1a1400' : '#cfcfcf');
+                        root.appendChild(lbl);
+                    });
+                });
+                return root;
+            },
+            table: {
+                summary: 'Show the numbers (rank and count per year)',
+                head: ['Weakness'].concat(index.map(function (y) { return String(y.year); })),
+                rows: ids.map(function (id) {
+                    return [id].concat(index.map(function (y) {
+                        var hit = y.map[id];
+                        if (!hit) return 'not in top ' + y.size;
+                        return '#' + hit.rank + (isNum(hit.count) ? ' · ' + fmtNum(hit.count) : '');
+                    }));
+                }),
+            },
+        };
+    }
+
+    /* ---- 06 · CNA data quality ----------------------------------------- */
+
+    function panelCna(st) {
+        var sec = panel('quality', '06 · Data quality', 'What the records themselves are missing',
+            'A CVE is a document before it is a vulnerability, and documents vary. This panel measures the documents.');
+
+        var q = obj(st.quality);
+        if (q) {
+            var qt = [
+                { k: 'No CWE', v: fmtNum(q.noCwe), gold: true, s: 'no weakness classification of any kind' },
+                { k: 'No CVSS', v: fmtNum(q.noCvss), s: 'no metric of any version — distinct from a score of 0' },
+                { k: 'Short description', v: fmtNum(q.shortDesc), s: 'under the publisher\'s length floor, but present' },
+            ];
+            // Rule 2 again: a description that is missing and one that is two
+            // words long are different failures, and the publisher counts them
+            // apart. Only shown where it is published.
+            if (isNum(q.noDesc)) {
+                qt.push({ k: 'No description', v: fmtNum(q.noDesc), s: 'no English description at all — not a short one' });
+            }
+            tiles(sec, qt);
+        }
+
+        var carried = carriedFrom(st);
+        var cna = arr(st.cna).filter(function (r) { return obj(r) && typeof r.source === 'string'; });
+        if (!cna.length) {
+            // Empty is not the same as "every CNA files perfect records". A
+            // delta run cannot see who published what, and with no earlier
+            // stats.json to carry forward the table is simply unmeasured.
+            sec.appendChild(el('div', 'banner',
+                'This snapshot carries no CNA table. Which authority published a record is not in the corpus itself — the publisher measures it as records stream past during a full pull — so a snapshot built incrementally, with no earlier full build to carry forward, has nothing to show here. Unmeasured, not zero.'));
+            return;
+        }
+
+        var sorted = cna.slice().sort(function (a, b) { return (b.count || 0) - (a.count || 0); });
+        var sortKey = 'count';
+        var sortDir = -1;
+        var limit = 20;
+
+        var fig = el('figure', 'fig');
+        var cap = el('figcaption');
+        cap.appendChild(el('h3', null, 'CNA data quality'));
+        cap.appendChild(el('p', 'sub', 'Every numbered authority that assigned records in this corpus, and how complete those records are.'));
+        fig.appendChild(cap);
+
+        // Contract §11 rule 1: the caveat is part of the chart.
+        var cv = el('div', 'caveat');
+        cv.appendChild(el('b', null, 'This table ranks nobody\'s security. '));
+        cv.appendChild(document.createTextNode(
+            'A high CVE count means a vendor looks harder and discloses more — treating it as a defect league table gets the incentive exactly backwards, and the honest reading of a low count is usually "we do not know". ' +
+            'What is measured here is the paperwork: whether the record arrived with a score, with a weakness, and with a description long enough to act on. ' +
+            'Medians are printed with their sample size, which is the record count in the same row.'));
+        fig.appendChild(cv);
+
+        // Rule 3. This table is the one figure on the page that can be older
+        // than the snapshot above it: a delta run cannot re-measure who
+        // published what, so it carries the last full build's table forward.
+        // The stamp under the table says which snapshot measured it, and this
+        // line says so in words as well.
+        if (carried) {
+            var cf = el('div', 'caveat');
+            cf.appendChild(el('b', null, 'Measured on ' + ymd(carried) + ', not on this snapshot. '));
+            cf.appendChild(document.createTextNode(
+                'This corpus was last rebuilt in full on ' + ymd(carried) + '; the builds since then fetched only what changed, and a day of changes is not a corpus-wide data-quality table. ' +
+                'The rows below are carried forward unchanged from that build rather than recomputed from a partial view.'));
+            fig.appendChild(cf);
+        }
+
+        var tools = el('div', 'legend');
+        var showAll = el('button', 'btn', 'Show all ' + cna.length);
+        showAll.type = 'button';
+        tools.appendChild(showAll);
+        fig.appendChild(tools);
+
+        var wrap = el('div', 'tblwrap');
+        var table = el('table', 'tbl');
+        wrap.appendChild(table);
+        fig.appendChild(wrap);
+        fig.appendChild(stamp(carried));
+        sec.appendChild(fig);
+
+        var COLS = [
+            { key: 'source', label: 'CNA', num: false },
+            { key: 'count', label: 'Records (n)', num: true },
+            { key: 'pctScored', label: 'With CVSS', num: true },
+            { key: 'pctCwe', label: 'With CWE', num: true },
+            { key: 'medianDescLen', label: 'Median description', num: true },
+        ];
+
+        function render() {
+            clear(table);
+            var thead = el('thead');
+            var tr = el('tr');
+            COLS.forEach(function (c) {
+                var th = el('th', c.num ? 'n' : null);
+                th.scope = 'col';
+                var btn = el('button', 'sort');
+                btn.type = 'button';
+                btn.appendChild(document.createTextNode(c.label + ' '));
+                if (sortKey === c.key) btn.appendChild(el('span', 'arrow', sortDir < 0 ? '▼' : '▲'));
+                btn.setAttribute('aria-label', 'Sort by ' + c.label);
+                btn.addEventListener('click', function () {
+                    if (sortKey === c.key) sortDir = -sortDir;
+                    else { sortKey = c.key; sortDir = c.num ? -1 : 1; }
+                    sorted = cna.slice().sort(function (a, b) {
+                        var av = a[sortKey], bv = b[sortKey];
+                        if (typeof av === 'string' || typeof bv === 'string') {
+                            return String(av).localeCompare(String(bv)) * sortDir;
+                        }
+                        return ((isNum(bv) ? bv : -1) - (isNum(av) ? av : -1)) * (sortDir < 0 ? 1 : -1);
+                    });
+                    render();
+                });
+                th.appendChild(btn);
+                tr.appendChild(th);
+            });
+            thead.appendChild(tr);
+            table.appendChild(thead);
+
+            var tbody = el('tbody');
+            sorted.slice(0, limit).forEach(function (r) {
+                var row = el('tr');
+                var tdName = el('td', null, r.source);
+                tdName.style.whiteSpace = 'normal';
+                row.appendChild(tdName);
+                row.appendChild(el('td', 'n', fmtNum(r.count)));
+                row.appendChild(pctCell(r.pctScored));
+                row.appendChild(pctCell(r.pctCwe));
+                row.appendChild(el('td', 'n', isNum(r.medianDescLen)
+                    ? fmtNum(r.medianDescLen) + ' chars (n ' + fmtNum(r.count) + ')'
+                    : 'not published'));
+                tbody.appendChild(row);
+            });
+            table.appendChild(tbody);
+            showAll.textContent = limit >= cna.length ? 'Show top 20' : 'Show all ' + cna.length;
+        }
+
+        function pctCell(v) {
+            var td = el('td', 'n');
+            if (!isNum(v)) { td.textContent = 'not published'; return td; }
+            // §11 writes these as fractions of 1, so 1 means every record and
+            // not one percent of them. Printing the raw number turned full
+            // coverage into "1.0%".
+            var pct = fractionPct(v);
+            if (pct == null) {
+                td.textContent = 'unreadable (' + v + ')';
+                td.title = 'This field is a fraction between 0 and 1 in stats.json v1. ' + v + ' is not one, so nothing is drawn from it.';
+                return td;
+            }
+            var bar = el('span', 'minibar');
+            var fill = el('span');
+            fill.style.width = pct + '%';
+            bar.appendChild(fill);
+            td.appendChild(bar);
+            td.appendChild(document.createTextNode(pct.toFixed(1) + '%'));
+            return td;
+        }
+
+        showAll.addEventListener('click', function () {
+            limit = limit >= cna.length ? 20 : cna.length;
+            render();
+        });
+        render();
+    }
+
+    /* ---- 07 · rhythm ---------------------------------------------------- */
+
+    function panelRhythm(st) {
+        var r = obj(st.rhythm);
+        var sec = panel('rhythm', '07 · Rhythm', 'When the work happens',
+            'Disclosure runs on office hours and on vendor patch cycles. This is the least consequential panel here and the most human: it is a picture of people\'s calendars.');
+
+        if (!r) {
+            sec.appendChild(el('div', 'banner', 'This snapshot publishes no rhythm block.'));
+            return;
+        }
+
+        var dow = arr(r.dow).filter(isNum);
+        if (dow.length === 7) {
+            var sum = dow.reduce(function (a, b) { return a + b; }, 0);
+            figure(sec, {
+                title: 'By day of week',
+                sub: 'Sunday first, matching the published array.',
+                build: function (w) {
+                    return columns(w, {
+                        cats: dow.map(function (v, i) { return { label: DOW[i], title: DOW[i], values: [v] }; }),
+                        series: [{ key: 'n', label: 'CVEs', color: GOLD }],
+                        stacked: true, height: 130, minBarW: 18, gap: 4,
+                        aria: 'Columns: CVEs published per day of the week.',
+                    });
+                },
+                table: {
+                    head: ['Day', 'CVEs', 'Share'],
+                    align: ['', 'n', 'n'],
+                    rows: dow.map(function (v, i) { return [DOW[i], fmtNum(v), fmtPct(share(v, sum), 2)]; }),
+                },
+            });
+        }
+
+        var dom = arr(r.dom).filter(isNum);
+        if (dom.length === 31) {
+            figure(sec, {
+                title: 'By day of month',
+                sub: 'The Tuesday-shaped bumps are patch cycles landing on a calendar that does not care what day of the week it is.',
+                caveatLead: 'The last three columns are not comparable.',
+                caveat: 'The 31st occurs in 7 months of the year, the 30th in 11, the 29th in 12 minus most Februaries. Their columns are lower because those days exist less often, not because less is published on them. This page draws the raw counts and says so rather than applying a correction it cannot show its working for.',
+                build: function (w) {
+                    return columns(w, {
+                        cats: dom.map(function (v, i) { return { label: String(i + 1), title: 'Day ' + (i + 1), values: [v] }; }),
+                        series: [{ key: 'n', label: 'CVEs', color: GOLD }],
+                        stacked: true, height: 140, minBarW: 5, gap: 2,
+                        xLabel: function (c, i) { return (i + 1) % 5 === 0 || i === 0 ? c.label : null; },
+                        aria: 'Columns: CVEs published per day of the month, 1 to 31.',
+                    });
+                },
+                table: {
+                    summary: 'Show the numbers (31 days)',
+                    head: ['Day of month', 'CVEs'],
+                    align: ['', 'n'],
+                    rows: dom.map(function (v, i) { return [i + 1, fmtNum(v)]; }),
+                },
+            });
+        }
+    }
+
+    /* ---- render -------------------------------------------------------- */
+
+    function renderAll(st) {
+        var boot = $('boot');
+        clear(boot);
+        boot.hidden = true;
+        $('toc').hidden = false;
+
+        // A stats file from a different build than the manifest is a real
+        // integrity problem, so it is stated at the top rather than reasoned
+        // about per figure.
+        if (app.manifest && st.snapshot && app.manifest.snapshot && st.snapshot !== app.manifest.snapshot) {
+            banner('The manifest describes the snapshot of ' + ymd(app.manifest.snapshot) + ', but stats.json was computed from ' +
+                ymd(st.snapshot) + '. The figures below are stamped with their own snapshot, which is the one to trust for them.',
+                true, 'These two files are from different builds.');
+        }
+        if (app.verified === null && app.verifyNote) {
+            banner(app.verifyNote + ' The figures are shown because nothing here is stored or acted on automatically, but they carry less weight than a verified file: treat them as indicative until you can check them on a secure origin.',
+                false, 'These bytes were not verified.');
+        }
+        if (isNum(st.records) && app.manifest && isNum(app.manifest.records) && st.records !== app.manifest.records) {
+            banner('stats.json counts ' + fmtNum(st.records) + ' records; the manifest counts ' + fmtNum(app.manifest.records) +
+                '. Both numbers are printed where they are used.', false, 'The two files disagree on the record count.');
+        }
+
+        panelBacklog(st);
+        panelKev(st);
+        panelVolume(st);
+        panelSeverity(st);
+        panelCwe(st);
+        panelCna(st);
+        panelRhythm(st);
+
+        watchResize();
+        // The page's own vertical scrollbar appears while these panels are being
+        // built, so every chart drawn before the last one was measured against a
+        // slightly wider column and now hangs ten pixels over its box. One redraw
+        // once layout has settled is cheaper than reserving a gutter for it.
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(redrawAll);
+        else setTimeout(redrawAll, 0);
+    }
+
+    /* ---- boot ---------------------------------------------------------- */
+
+    function start() {
+        var q = mirrorFromQuery();
+        var pick = q ? Promise.resolve(q) : savedMirror();
+        pick.then(function (saved) {
+            app.base = (saved || DEFAULT_MIRROR).replace(/\/+$/, '');
+            paintProvenance();
+            return load();
+        }).then(function (st) {
+            paintProvenance();
+            renderAll(st);
+        }).catch(function (err) {
+            showError(err);
+        });
+    }
+
+    // The two module scripts are deferred, so they have attached their globals
+    // by DOMContentLoaded; running earlier would find no CveSync.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start);
+    } else {
+        start();
+    }
+}());
+</script>
+</body>
+</html>

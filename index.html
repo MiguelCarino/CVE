@@ -85,7 +85,16 @@
         
         .badge { padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
         .badge-status { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
-        
+
+        /* KEV is 0.44% of all CVEs, so this badge is rare by construction and
+           can afford to be found from across the page. Red on a pale ground
+           rather than a solid red block: the card must not become an alarm,
+           because the score box beside it is already carrying the severity. */
+        .badge-kev { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+        /* The ransomware marker is the one thing here that outranks the score,
+           so it is the one thing that inverts. About a third of KEV carries it. */
+        .badge-ransom { background: #7f1d1d; color: #fee2e2; border: 1px solid #7f1d1d; }
+
         .cve-desc { font-size: 0.95rem; line-height: 1.6; color: var(--text); margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .cve-desc.expanded { -webkit-line-clamp: unset; }
         
@@ -157,6 +166,18 @@
         .prov:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         .coverage { padding: 3px 8px; border: 1px solid #f59e0b; border-radius: 5px; background: #fffbeb; color: #b45309; font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; }
 
+        /* KEV and EPSS filter what is already loaded, so they belong beside the
+           severity floor rather than in a group of their own: one compact row
+           inside an existing group, and the rail keeps its height. */
+        .sev-extra { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+        .sev-extra label { margin: 0; }
+        .sev-extra .chk { display: flex; align-items: center; gap: 6px; color: #a3a3a3; cursor: pointer; }
+        .controls .sev-extra input[type="checkbox"] { width: auto; margin: 0; padding: 0; accent-color: #eab308; cursor: pointer; }
+        .sev-extra .epss-lbl { margin-left: auto; }
+        .controls .sev-extra select { width: auto; padding: 5px 6px; font-size: 0.72rem; }
+        .sev-extra input:disabled, .sev-extra select:disabled { opacity: 0.45; cursor: not-allowed; }
+        .sev-extra .chk:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
+
         /* Quick tags are <button> now, so they are reachable by keyboard. */
         button.tag { font-family: inherit; }
         button.tag:focus-visible, .btn-ghost:focus-visible, .desc-toggle:focus-visible,
@@ -174,6 +195,10 @@
         .chip { display: inline-block; padding: 3px 8px; border: 1px solid var(--border); border-radius: 5px; background: #f8fafc; color: var(--text-light); font-size: 0.7rem; text-decoration: none; }
         .chip.mono { font-family: 'IBM Plex Mono', monospace; }
         a.chip:hover { border-color: var(--primary); color: var(--primary); }
+        /* EPSS is a probability, not a verdict, so it stays a neutral chip
+           until it crosses the half — where amber is the same "read this"
+           the coverage note uses, and still not the KEV red. */
+        .chip-epss.hot { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
 
         .load-more { display: block; width: 100%; margin: 5px 0 30px; padding: 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; color: var(--text-light); font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; cursor: pointer; transition: 0.2s; }
         .load-more:hover { border-color: var(--primary); color: var(--primary); }
@@ -253,6 +278,27 @@
                         <option value="HIGH" data-i18n>High+</option>
                         <option value="CRITICAL" data-i18n>Critical only</option>
                     </select>
+
+                    <!-- Two display filters over what is already loaded, folded
+                         into the severity group on purpose (§10): they never
+                         enter the query plan, so they take effect on change
+                         rather than on Search, and the rail gains no section.
+                         Both are disabled until the feed behind them is loaded;
+                         the reason lives in their title. -->
+                    <div class="sev-extra">
+                        <label class="chk" for="kevOnly">
+                            <input type="checkbox" id="kevOnly">
+                            <span data-i18n>KEV only</span>
+                        </label>
+                        <label class="epss-lbl" for="epssMin" data-i18n>EPSS ≥</label>
+                        <select id="epssMin">
+                            <option value="" data-i18n>Any</option>
+                            <option value="0.1">0.10</option>
+                            <option value="0.5">0.50</option>
+                            <option value="0.9">0.90</option>
+                        </select>
+                    </div>
+
                     <p class="hint" data-i18n>A floor, not an exact match: High+ includes Critical.</p>
                 </div>
 
@@ -350,7 +396,11 @@ const RATE_MAX = 5;            // requests ...
 const RATE_WINDOW = 30000;     // ... per this many ms, unkeyed
 const SEV_ORDER = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
-const state = { keyword: '', timeframe: '90', severity: '', sort: 'date-new' };
+// `kev` and `epssMin` are display filters over records that are already
+// loaded (§10). They are part of the view — the hash carries them, quick views
+// carry them — but they are NEVER part of the question asked of a source, so
+// nothing in buildStreams() or the query plan reads them.
+const state = { keyword: '', timeframe: '90', severity: '', sort: 'date-new', kev: false, epssMin: 0 };
 
 const DEFAULT_MIRROR = 'https://cve-data.carino.systems';
 
@@ -366,6 +416,11 @@ let syncTried = false;
 let streams = [];              // one per (date window × severity query)
 let records = [];              // every CVE fetched, deduplicated
 let shown = [];                // records after the severity floor and the sort
+// How many loaded records survived each filter stage, measured in
+// applyFilterSort(). An empty list has three possible causes and they are not
+// interchangeable — emptyMessage() names the one that actually happened.
+let floorCount = 0;
+let kevCount = 0;
 let seenIds = new Set();
 let retrievedAt = null;
 
@@ -638,16 +693,53 @@ function cweList(c) {
     return out.slice(0, 4);
 }
 
+/* ---- enrichment: KEV and EPSS ----------------------------------------
+   Two facts about a record that NVD does not carry. CISA and FIRST both
+   serve them without an access-control-allow-origin header, so a browser
+   cannot fetch either one directly and the mirror is the only route (§10);
+   cve-enrich.js is that route. Every call here is guarded twice — the module
+   is one more classic script that can fail to load, and a feed that never
+   loaded must read as "no badge", never as a broken card. */
+
+const NO_ENRICH = { kev: false, epss: false, generated: '', date: '' };
+const enrichReady = () => (window.CveEnrich ? CveEnrich.ready() : NO_ENRICH);
+const kevOf = (c) => (window.CveEnrich && c ? CveEnrich.kev(c.id) : null);
+const epssOf = (c) => (window.CveEnrich && c ? CveEnrich.epss(c.id) : null);
+
 /* ---- filter and sort ------------------------------------------------ */
 
 function applyFilterSort() {
     const floor = state.severity;
+    const ready = enrichReady();
+    // A filter that cannot be evaluated is not applied. Filtering to KEV with
+    // no KEV catalogue loaded would empty the list and read exactly like
+    // "nothing here is being exploited" — the most expensive wrong answer this
+    // page can give. renderHeader() says so instead.
+    const kevOnly = state.kev && ready.kev;
+    const epssMin = ready.epss ? state.epssMin : 0;
+
     shown = records.filter((c) => {
         if (!floor) return true;
         const s = severityOf(c);
         if (!s) return false;                     // unrated cannot clear a floor
         return SEV_ORDER.indexOf(s) >= SEV_ORDER.indexOf(floor);
     });
+    floorCount = shown.length;
+
+    // §10: both run AFTER the severity floor, over records that are already
+    // here. Neither changes what was fetched.
+    if (kevOnly) shown = shown.filter((c) => !!kevOf(c));
+    kevCount = shown.length;
+    if (epssMin > 0) {
+        shown = shown.filter((c) => {
+            const e = epssOf(c);
+            // No EPSS score is not a score of zero — missing and 0.00000 are
+            // different claims — but it cannot clear a floor either, which is
+            // the same rule an unrated record meets above.
+            return !!e && e.score >= epssMin;
+        });
+    }
+
     const by = state.sort;
     shown.sort((a, b) => {
         if (by === 'date-new' || by === 'date-old') {
@@ -671,6 +763,27 @@ function setStatus(msg) {
     if (el) el.textContent = msg;
 }
 
+// The KEV badge's tooltip carries the dates the badge itself has no room for.
+// `due` is the US federal remediation deadline and may be empty, which is a
+// real KEV entry rather than a broken one.
+function kevTitle(kev) {
+    const bits = [tf('In the CISA Known Exploited Vulnerabilities catalogue since %1', kev.added || '—')];
+    if (kev.due) bits.push(tf('US federal remediation due %1', kev.due));
+    if (kev.ransomware) bits.push(t_('Known to have been used in ransomware campaigns.'));
+    return bits.join(' · ');
+}
+
+// EPSS is a probability over the next 30 days and a percentile among all
+// scored CVEs. The chip shows both because either alone misleads: 0.08 sounds
+// small until you learn it is higher than 94% of everything ever published.
+function epssTitle(e, date) {
+    const pct = (e.score * 100).toFixed(1);
+    const rank = (e.percentile * 100).toFixed(1);
+    const bits = [tf('EPSS: about a %1% chance of exploitation in the next 30 days, higher than %2% of all scored CVEs.', pct, rank)];
+    if (date) bits.push(tf('FIRST EPSS model of %1.', date));
+    return bits.join(' ');
+}
+
 function card(c) {
     const m = metricsOf(c);
     const sev = severityOf(c);
@@ -680,6 +793,8 @@ function card(c) {
     const cwes = cweList(c);
     const long = desc.length > 180;
     const vector = m && m.d ? (m.d.vectorString || '') : '';
+    const kev = kevOf(c);
+    const epss = epssOf(c);
 
     const div = document.createElement('div');
     div.className = 'cve-item ' + (unrated ? 'pending' : (sev || 'pending').toLowerCase());
@@ -689,6 +804,17 @@ function card(c) {
                 '<a class="cve-id" target="_blank" rel="noopener" href="https://nvd.nist.gov/vuln/detail/' +
                     encodeURIComponent(c.id) + '">' + esc(c.id) + '</a>' +
                 '<span class="badge badge-status">' + esc(c.vulnStatus || '—') + '</span>' +
+                // Exploited in the wild outranks everything else on the card,
+                // so it sits immediately after the status and before the fold.
+                (kev
+                    ? '<span class="badge badge-kev" title="' + esc(kevTitle(kev)) + '">' +
+                        esc(tf('KEV · %1', kev.added || '—')) + '</span>' +
+                      (kev.ransomware
+                        ? '<span class="badge badge-ransom" title="' +
+                            esc(t_('Known to have been used in ransomware campaigns.')) + '">' +
+                            esc(t_('Ransomware')) + '</span>'
+                        : '')
+                    : '') +
                 '<button type="button" class="btn-ghost btn-copy" data-id="' + esc(c.id) + '">' +
                     esc(t_('Copy ID')) + '</button>' +
             '</div>' +
@@ -697,9 +823,15 @@ function card(c) {
                 ? '<button type="button" class="desc-toggle" aria-expanded="false" aria-controls="d-' +
                     esc(c.id) + '">' + esc(t_('Expand description')) + '</button>'
                 : '') +
-            (m || cwes.length
+            (m || cwes.length || epss
                 ? '<div class="cve-tags">' +
                     (m ? '<span class="chip">CVSS ' + esc(m.v) + ' · ' + esc(m.src) + '</span>' : '') +
+                    (epss
+                        ? '<span class="chip mono chip-epss' + (epss.score >= 0.5 ? ' hot' : '') +
+                            '" title="' + esc(epssTitle(epss, enrichReady().date)) + '">' +
+                            esc(tf('EPSS %1 · %2th', epss.score.toFixed(3), (epss.percentile * 100).toFixed(1))) +
+                          '</span>'
+                        : '') +
                     (vector ? '<span class="chip mono">' + esc(vector) + '</span>' : '') +
                     cwes.map((w) => '<a class="chip" target="_blank" rel="noopener" href="https://cwe.mitre.org/data/definitions/' +
                         encodeURIComponent(w.slice(4)) + '.html">' + esc(w) + '</a>').join('') +
@@ -717,9 +849,43 @@ function card(c) {
     return div;
 }
 
+// Three different facts can produce an empty list, and telling them apart is
+// the whole difference between "nothing matched" and "nothing is exploited".
+// The counts come from applyFilterSort(), which measured them.
 function emptyMessage() {
     if (!records.length) return t_('No CVEs were published in this window.');
-    return tf('All %1 loaded records were filtered out by the severity floor.', fmtNum(records.length));
+    const floored = tf('All %1 loaded records were filtered out by the severity floor.', fmtNum(records.length));
+    if (!floorCount) return floored;
+    const ready = enrichReady();
+    if (state.kev && ready.kev && !kevCount) {
+        return tf('None of the %1 records that cleared the severity floor are in the CISA KEV catalogue. KEV is about 0.44% of all CVEs, so filtering one page of NVD results to it usually finds none — over a local corpus the same question is exact.',
+            fmtNum(floorCount));
+    }
+    if (state.epssMin > 0 && ready.epss) {
+        return tf('None of the %1 records that cleared the earlier filters score %2 or higher in EPSS.',
+            fmtNum(kevCount), state.epssMin);
+    }
+    return floored;
+}
+
+// Whole days between a stamp and now, or null when it cannot be read. Both
+// feeds date themselves — KEV with an ISO `generated`, EPSS with a model
+// `date` — and neither is the corpus snapshot, so neither is covered by the
+// provenance line.
+const ENRICH_STALE_DAYS = 7;
+function daysOld(stampStr) {
+    const at = Date.parse(String(stampStr || '').slice(0, 10));
+    if (!isFinite(at)) return null;
+    return Math.floor((Date.now() - at) / 86400000);
+}
+
+function enrichAgeNotes(ready) {
+    const out = [];
+    const k = ready.kev ? daysOld(ready.generated) : null;
+    if (k !== null && k > ENRICH_STALE_DAYS) out.push(tf('KEV catalogue is %1 days old', fmtNum(k)));
+    const e = ready.epss ? daysOld(ready.date) : null;
+    if (e !== null && e > ENRICH_STALE_DAYS) out.push(tf('EPSS scores are %1 days old', fmtNum(e)));
+    return out;
 }
 
 function renderHeader() {
@@ -731,7 +897,32 @@ function renderHeader() {
     }
     const cov = document.getElementById('coverage');
     if (cov) {
-        cov.textContent = (partial && completeThrough) ? tf('complete through %1', completeThrough) : '';
+        const notes = [];
+        let tip = '';
+        if (partial && completeThrough) notes.push(tf('complete through %1', completeThrough));
+        // §10's honest limit, stated rather than discovered. KEV is 0.44% of
+        // all CVEs: over a page of NVD results the filter can only see what was
+        // loaded, so an empty list is a fact about this page and not about the
+        // catalogue. Over a local corpus it is exact and no note is needed.
+        const ready = enrichReady();
+        if (state.kev && !ready.kev) {
+            notes.push(t_('KEV list not loaded — that filter was not applied'));
+        } else if (state.kev && usedSources.nvd) {
+            notes.push(tf('KEV filter covers the %1 loaded records only', fmtNum(records.length)));
+            tip = t_('CISA KEV is about 0.44% of all CVEs. Applied to a live NVD page this filter sees only the records that were loaded; applied to a local corpus it is exact.');
+        }
+        if (state.epssMin > 0 && !ready.epss) {
+            notes.push(t_('EPSS scores not loaded — that filter was not applied'));
+        }
+        // §9, applied to the two feeds that carry their own dates. A KEV badge
+        // is rendered from whatever this browser holds, and after an unreachable
+        // mirror that is a copy older than the one being published — which is
+        // precisely the confident stale answer §9 forbids. The tooltip on the
+        // filter says how old; a badge on a card cannot, so the age goes here
+        // whenever a feed is loaded, filter or no filter.
+        enrichAgeNotes(ready).forEach((n) => notes.push(n));
+        cov.textContent = notes.join(' · ');
+        cov.title = tip;
         cov.style.display = cov.textContent ? '' : 'none';
     }
     renderProvenance();
@@ -794,7 +985,14 @@ async function withLoader(fn) {
         await fn();
         // A partial answer must not report a clean connection: the corpus
         // carried it, and the span past the snapshot is missing.
-        setStatus(partial ? t_('NVD unreachable — local results only') : t_('NVD API Connected'));
+        // Naming the source that actually answered. Reporting a live NVD
+        // connection after a local-only search asserts a network path this
+        // search never touched: for a past year the plan is local-only and
+        // NVD is never contacted, so "connected" is a guess dressed as a fact.
+        setStatus(partial ? t_('NVD unreachable — local results only')
+            : usedSources.nvd ? t_('NVD API Connected')
+            : usedSources.local ? t_('Answered from the local corpus')
+            : t_('NVD API Connected'));
         return true;
     } catch (err) {
         console.error(err);
@@ -847,6 +1045,18 @@ function reSortList() {
     renderList();
 }
 
+// KEV and EPSS filter records that are already here, so they cost no request
+// and take effect the moment they change — like the sort control, and unlike
+// the severity floor, which is also part of the question asked of the source.
+// Only the two controls are read: readControls() would pull an unsubmitted
+// keyword into the state and the hash would then claim it was searched.
+function reFilterList() {
+    readEnrichControls();
+    writeHash();
+    applyFilterSort();
+    renderList();
+}
+
 /* ---- the local corpus ------------------------------------------------ */
 
 async function refreshCorpusMeta() {
@@ -865,9 +1075,14 @@ async function refreshCorpusMeta() {
 // page and at most twice a day, and never disturb what is already on screen —
 // a failure here is invisible because every query can still reach NVD itself.
 async function backgroundSync() {
-    if (syncTried || !corpusMeta || !window.CveSync) return;
+    // A meta bag is not a corpus. Since §10 the meta store also holds the two
+    // cached enrichment feeds, so getMeta() answers non-null for a browser that
+    // has never downloaded a shard — and applyDeltas has nothing to date a gap
+    // from without a lastSync. Requiring it is the same rule the Data dialog's
+    // Update button follows.
+    if (syncTried || !corpusMeta || !corpusMeta.lastSync || !window.CveSync) return;
     syncTried = true;
-    const last = corpusMeta.lastSync ? Date.parse(corpusMeta.lastSync) : 0;
+    const last = Date.parse(corpusMeta.lastSync);
     if (last && Date.now() - last < 12 * 3600 * 1000) return;
     try {
         const base = corpusMeta.mirror || DEFAULT_MIRROR;
@@ -880,6 +1095,88 @@ async function backgroundSync() {
     }
 }
 
+/* ---- KEV and EPSS ----------------------------------------------------
+   The mirror is the only route to either feed, so this runs on every page
+   load and not only for people who hold a corpus: KEV is ~1,700 entries and
+   answers "is this being exploited right now", which is worth more per byte
+   than anything else here. The cost of a repeat visit is one 2 KB manifest
+   that confirms the cached bytes are still the ones being published; the
+   feeds themselves are refetched only when their hash changes. It runs after
+   the first paint, and a failure is invisible because every card renders the
+   same without it. */
+
+// §8's rule for the corpus applies to EPSS for the same measured reason: it
+// is one score per CVE — roughly 60 MB as live objects, against about 50 KB
+// for the whole KEV catalogue. A device the contract would not hand a
+// full-tier corpus should not be handed this either, so under 4 GB the page
+// asks for KEV alone and the EPSS control says why it is off. Where the
+// browser will not say how much memory it has, nothing is assumed.
+function epssAffordable() {
+    try {
+        const mem = navigator.deviceMemory;
+        return !(typeof mem === 'number' && mem > 0 && mem < 4);
+    } catch (e) {
+        return true;
+    }
+}
+
+// A shallow copy of the manifest without the EPSS entry. CveEnrich loads the
+// feeds the manifest offers it, so this is the page declining one — not the
+// module guessing at what the device can afford.
+function enrichManifest(man) {
+    if (!man || !man.enrich || epssAffordable()) return man;
+    const out = Object.assign({}, man);
+    out.enrich = Object.assign({}, man.enrich);
+    delete out.enrich.epss;
+    return out;
+}
+
+async function loadEnrichment() {
+    if (!window.CveEnrich) return;
+    const base = (corpusMeta && corpusMeta.mirror) || DEFAULT_MIRROR;
+    try {
+        // Whatever this browser already verified, before any network at all:
+        // offline, that is the whole answer, and it carries its own date.
+        await CveEnrich.load(base, enrichManifest(corpusManifest));
+        if (!corpusManifest && window.CveSync) {
+            // No sync ran this page load, so nothing has yet said whether the
+            // cached feeds are still the ones the mirror publishes.
+            corpusManifest = await CveSync.manifest(base);
+            await CveEnrich.load(base, enrichManifest(corpusManifest));
+        }
+    } catch (err) {
+        console.error(err);          // the mirror is unreachable: no badges
+    }
+    syncEnrichControls();
+    // The cards on screen were built before the feeds arrived, and a shared
+    // #k=1 link has been waiting on a filter that could not yet be evaluated.
+    if (records.length) paint();
+}
+
+// The two enrichment controls are meaningful only once the feed behind them
+// is loaded, so they are disabled until then and carry the reason in their
+// title — a tooltip rather than another line of hint, because §6 says the
+// rail does not grow.
+function syncEnrichControls() {
+    const ready = enrichReady();
+    const box = document.getElementById('kevOnly');
+    if (box) {
+        box.disabled = !ready.kev;
+        box.title = ready.kev
+            ? tf('CISA Known Exploited Vulnerabilities, generated %1', String(ready.generated).slice(0, 10) || '—')
+            : t_('The KEV catalogue is not loaded, so this filter cannot be applied.');
+    }
+    const sel = document.getElementById('epssMin');
+    if (sel) {
+        sel.disabled = !ready.epss;
+        sel.title = ready.epss
+            ? tf('FIRST EPSS — the probability of exploitation in the next 30 days. Model of %1.', ready.date || '—')
+            : (epssAffordable()
+                ? t_('EPSS scores are not loaded, so this filter cannot be applied.')
+                : t_('EPSS is one score per CVE and costs about 60 MB in memory, so it is left out on a device reporting less than 4 GB.'));
+    }
+}
+
 /* ---- controls, URL state, export ------------------------------------ */
 
 function readControls() {
@@ -887,6 +1184,18 @@ function readControls() {
     state.timeframe = document.getElementById('timeSelect').value || '90';
     state.severity = document.getElementById('cvssSeverity').value;
     state.sort = document.getElementById('sortBy').value;
+    readEnrichControls();
+}
+
+// Read even when the control is disabled: a link that asked for KEV asked for
+// it, and dropping that intent because the feed has not landed yet would lose
+// it silently the moment the user pressed Search.
+function readEnrichControls() {
+    const box = document.getElementById('kevOnly');
+    state.kev = !!(box && box.checked);
+    const sel = document.getElementById('epssMin');
+    const e = parseFloat(sel ? sel.value : '');
+    state.epssMin = isFinite(e) && e > 0 ? e : 0;
 }
 
 function writeControls() {
@@ -896,6 +1205,24 @@ function writeControls() {
     if (!time.value) { time.value = '90'; state.timeframe = '90'; }  // e.g. an old #t=all link
     document.getElementById('cvssSeverity').value = state.severity;
     document.getElementById('sortBy').value = state.sort;
+    document.getElementById('kevOnly').checked = !!state.kev;
+    setEpssOption(state.epssMin);
+}
+
+// A shared link can carry any threshold (#e=0.37), and a select that silently
+// blanked because 0.37 is not one of its four rungs would drop the filter
+// without saying so. The exact value becomes an option of its own instead.
+function setEpssOption(v) {
+    const sel = document.getElementById('epssMin');
+    if (!sel) return;
+    const want = v > 0 ? String(v) : '';
+    if (want && !Array.prototype.some.call(sel.options, (o) => o.value === want)) {
+        const o = document.createElement('option');
+        o.value = want;
+        o.textContent = want;
+        sel.appendChild(o);
+    }
+    sel.value = want;
 }
 
 // The whole view is in the hash, so a shared link reproduces what the sender
@@ -906,6 +1233,8 @@ function writeHash() {
     if (state.timeframe !== '90') p.set('t', state.timeframe);
     if (state.severity) p.set('s', state.severity);
     if (state.sort !== 'date-new') p.set('o', state.sort);
+    if (state.kev) p.set('k', '1');
+    if (state.epssMin > 0) p.set('e', String(state.epssMin));
     const h = p.toString();
     history.replaceState(null, '', h ? '#' + h : location.pathname + location.search);
 }
@@ -922,6 +1251,13 @@ function readHash() {
     if (p.has('t')) state.timeframe = p.get('t');
     if (p.has('s')) state.severity = p.get('s');
     if (p.has('o')) state.sort = p.get('o');
+    if (p.has('k')) state.kev = p.get('k') === '1' || p.get('k') === 'true';
+    if (p.has('e')) {
+        const n = parseFloat(p.get('e'));
+        // EPSS is a probability. Anything outside 0–1 is not a threshold, and
+        // a link carrying one gets no filter rather than an invented bound.
+        state.epssMin = isFinite(n) && n > 0 && n <= 1 ? n : 0;
+    }
 }
 
 function buildYearOptions() {
@@ -995,6 +1331,12 @@ const DEFAULT_VIEWS = [
     // Filter-driven views: no keyword, just the question.
     { id: 'd:crit7',  group: 'Triage', label: 'Critical · last 7 days',  t: '7',  s: 'CRITICAL' },
     { id: 'd:high30', group: 'Triage', label: 'High+ · last 30 days',    t: '30', s: 'HIGH' },
+    // The two questions a severity score cannot answer: what is being
+    // exploited today, and what is likely to be next. Both filter what was
+    // loaded rather than what was asked for, which the header states when the
+    // answer came from NVD live (§10).
+    { id: 'd:kev90',   group: 'Triage', label: 'Known exploited (CISA KEV)', t: '90', k: 1 },
+    { id: 'd:epss30',  group: 'Triage', label: 'Likely exploited · EPSS ≥ 0.5', t: '30', e: 0.5 },
 
     // The perimeter — where the exploited ones keep coming from.
     { id: 'd:fortinet', group: 'Edge & VPN', label: 'Fortinet',  q: 'Fortinet' },
@@ -1087,6 +1429,8 @@ function viewSummary(v) {
     if (v.q) bits.push('“' + v.q + '”');
     bits.push(timeframeLabel(v.t || '90'));
     bits.push(v.s ? t_(SEV_LABEL[v.s]) : t_('Any severity'));
+    if (v.k) bits.push(t_('KEV only'));
+    if (v.e) bits.push(tf('EPSS ≥ %1', v.e));
     if (v.o && v.o !== 'date-new') bits.push(t_(SORT_LABEL[v.o]));
     return bits.join(' · ');
 }
@@ -1096,6 +1440,9 @@ function applyView(v) {
     state.timeframe = v.t || '90';
     state.severity = v.s || '';
     state.sort = v.o || 'date-new';
+    state.kev = !!v.k;
+    const e = parseFloat(v.e);
+    state.epssMin = isFinite(e) && e > 0 && e <= 1 ? e : 0;
     writeControls();
     runSearch();
 }
@@ -1222,6 +1569,10 @@ function saveCurrentView() {
         id: 'u:' + Date.now().toString(36),
         group: 'yours', label: label,
         q: state.keyword, t: state.timeframe, s: state.severity, o: state.sort,
+        // A view is the whole search state, and since §10 these two are part
+        // of it — a saved "known exploited" view that forgot the KEV filter
+        // would restore as a plain 90-day search and look like it worked.
+        k: state.kev ? 1 : 0, e: state.epssMin,
     };
     views.custom.unshift(v);
     views.pins = [v.id].concat(pinIds().filter((id) => id !== v.id)).slice(0, MAX_PINS);
@@ -1290,6 +1641,10 @@ function wire() {
     wireViews();
 
     document.getElementById('sortBy').addEventListener('change', reSortList);
+    document.getElementById('kevOnly').addEventListener('change', reFilterList);
+    document.getElementById('epssMin').addEventListener('change', reFilterList);
+    // Off until a feed lands, with the reason in the tooltip.
+    syncEnrichControls();
     document.getElementById('qvClose').addEventListener('click',
         () => document.getElementById('viewsDialog').close());
 
@@ -1327,7 +1682,18 @@ function wire() {
         download('cve-' + stamp() + '.json', 'application/json', JSON.stringify({
             source: 'NVD CVE API 2.0',
             retrieved: (retrievedAt || new Date()).toISOString(),
-            query: { keyword: state.keyword, timeframe: state.timeframe, minimumSeverity: state.severity || 'any' },
+            // Every filter that decided which rows are below, not only the ones
+            // that were asked of the source: the KEV and EPSS floors are applied
+            // after the fetch (§10), and an export whose stamp omits them cannot
+            // be recomputed from it. `false`/`0` rather than omitted, so the
+            // reader can tell "not filtered" from "an older export".
+            query: {
+                keyword: state.keyword,
+                timeframe: state.timeframe,
+                minimumSeverity: state.severity || 'any',
+                kevOnly: !!(state.kev && enrichReady().kev),
+                minimumEpss: enrichReady().epss ? state.epssMin : 0,
+            },
             loaded: records.length,
             matched: streams.reduce((n, s) => n + (s.total || 0), 0),
             results: rows,
@@ -1337,18 +1703,33 @@ function wire() {
     if (window.CveDataUI) {
         try { CveDataUI.init(); } catch (e) { console.error(e); }
     }
+    // Watchlists build their own dialog and are reached from the Data dialog,
+    // so this is the whole of their wiring here: the sidebar gains nothing.
+    if (window.CveWatch) {
+        try { CveWatch.init(); } catch (e) { console.error(e); }
+    }
     document.getElementById('provenance').addEventListener('click', () => {
         if (window.CveDataUI) CveDataUI.open();
     });
     // The dialog downloads, updates or deletes the corpus; when it does, the
     // plan for the next query changes, so re-read what the store now holds.
     window.addEventListener('cve:datachanged', () => {
-        refreshCorpusMeta().then(() => { syncTried = true; runSearch(); });
+        refreshCorpusMeta().then(() => {
+            syncTried = true;
+            runSearch();
+            // The mirror may have changed with it, and the feeds hang off that
+            // same manifest — so re-check them rather than keep badges from an
+            // address the user has just stopped using.
+            corpusManifest = null;
+            return loadEnrichment();
+        });
     });
 
     refreshCorpusMeta()
         .then(runSearch)
-        .then(() => setTimeout(backgroundSync, 1500));
+        // Both run after the first paint and neither can disturb it:
+        // backgroundSync never rejects, and loadEnrichment only adds badges.
+        .then(() => setTimeout(() => { backgroundSync().then(loadEnrichment); }, 1500));
 }
 
 // i18n.js registers its own DOMContentLoaded listener from a deferred script,
@@ -1361,17 +1742,21 @@ window.cveRerender = function () {
     buildYearOptions();
     document.getElementById('timeSelect').value = state.timeframe;
     qvPlaceholders();
+    syncEnrichControls();          // the tooltips are translated too
     renderChips();
     if (document.getElementById('viewsDialog').open) renderViewList();
     if (records.length || streams.length) renderList();
 };
 </script>
 <!-- The offline corpus. Deferred, so they attach their globals before wire()
-     runs, and in dependency order: cve-sync uses CveDB, cve-data-ui uses both. -->
+     runs, and in dependency order: cve-sync uses CveDB, cve-enrich uses both,
+     cve-data-ui uses both, and cve-watch is reached from cve-data-ui. -->
 <script src="js/cve-db.js" defer></script>
 <script src="js/cve-sync.js" defer></script>
 <script src="js/cve-sources.js" defer></script>
+<script src="js/cve-enrich.js" defer></script>
 <script src="js/cve-data-ui.js" defer></script>
+<script src="js/cve-watch.js" defer></script>
 <script src="carino-navbar.js" data-app="CVE" data-repo="CVE" defer></script>
 <script src="carino-lang.js" defer></script>
 <script src="i18n.js" defer></script>

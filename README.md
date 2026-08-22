@@ -20,6 +20,9 @@ Live at **https://cve.carino.systems**
 - **PENDING means no score** — a grey PENDING card means the record carries no CVSS at all (about 2% of records). A CVE that NVD has not analysed yet usually still carries the CNA's score; that score is shown, with the `vulnStatus` badge saying NVD has not finished.
 - **Export** — CSV or JSON of what is on screen. The JSON carries the query, the retrieval timestamp and both counts.
 - **Shareable views** — the whole view is in the URL hash (`#q=chrome&t=2025&s=HIGH&o=score-high`), so a shared link reproduces what the sender saw. Old links carrying a bare keyword still work.
+- **KEV and EPSS** — cards carry a **KEV** badge when CISA lists the CVE as known-exploited, and an EPSS chip with the exploitation probability. Both are filterable. Neither service can be fetched by a browser at all; see [Exploitation and probability](#exploitation-and-probability--kev-and-epss).
+- **The observatory** — [`stats.html`](stats.html) plots the whole corpus: publication volume, severity mix, the NVD enrichment backlog, analysis lag, CWE and CNA data quality, KEV overlap, EPSS distribution. It downloads ~200 KB and no shards.
+- **Watchlists** — name a list of product terms once and ask *"what is new for my estate since my last sync?"* Exports to CSV, JSON and a printable HTML, each stamped with the snapshot it was computed from.
 - **Provenance** — the rail states where the data came from and when it was retrieved.
 - **Mobile drawer** — below 900px the filter rail becomes an off-canvas drawer toggled by a ☰ button injected into the shared navbar; it closes via the scrim, the Escape key, or automatically when a quick-tag or Search is tapped.
 - **API status indicator** — Fetching… / per-request progress / rate-limit countdown / NVD API Connected / API Error.
@@ -75,6 +78,121 @@ point the client at your own mirror. The sidebar gains no controls.
 
 Publisher, wire format and the self-hosting bundle: **[CVE-data](https://github.com/MiguelCarino/CVE-data)**
 — `CONTRACT.md` is the schema of record, `SEAMS.md` walks one record end to end.
+
+## Exploitation and probability — KEV and EPSS
+
+A CVSS score says how bad a vulnerability would be if someone used it. Two other feeds say whether
+anyone *is*:
+
+- **CISA KEV** — the Known Exploited Vulnerabilities catalogue. About **1,700 entries**, each with
+  the date CISA added it, the remediation due date for US federal agencies, and whether it is known
+  to be used in ransomware campaigns. It answers *is this being exploited right now*, which is worth
+  more per byte than anything else in this dataset.
+- **FIRST EPSS** — a daily-refreshed probability that a given CVE will be exploited in the wild in
+  the next 30 days, plus that score's percentile against every other CVE. One score per CVE.
+
+**Neither one can be fetched by a browser.** Measured with a cross-origin `Origin` header on
+21 August 2026: **CISA KEV and FIRST EPSS both send no `access-control-allow-origin`.** Not a
+restrictive value — none at all, so the browser refuses the response before this page ever sees it.
+No amount of client-side cleverness gets around that; a proxy or a mirror is the only route. So the
+publisher mirrors both, hashed like everything else:
+
+```
+/enrich/kev.json.gz      ~1,700 entries
+/enrich/epss.json.gz     one score per CVE
+```
+
+Mirroring them is therefore not a convenience or a caching trick — it is the only way a page with no
+backend can ever show this data at all. Both files are small enough to load with the corpus and
+useful enough to load without it.
+
+Either file may be **absent**: if CISA or FIRST is down when the publisher runs, the manifest simply
+omits that key. The client degrades to *no badges* — never to a wrong badge, and never to a failed
+publish. A filter whose feed did not load is **not applied**, and the header says so: silently
+filtering to KEV with no KEV catalogue would empty the list and read exactly like *nothing here is
+being exploited*, which is the most expensive wrong answer this page could give.
+
+KEV is fetched on every visit, corpus or no corpus — it is ~1,700 entries and it answers the
+question worth the most per byte. **EPSS is not fetched on a device reporting less than 4 GB of
+memory**: it is one score per CVE, roughly 60 MB held as live objects against about 50 KB for the
+whole of KEV, and §8 already refuses to hand such a device a full-tier corpus. The EPSS control is
+then disabled and its tooltip says which of the two reasons applies.
+
+**Filtering, and its honest limit.** *Known exploited only* and an *EPSS at least* threshold are
+display-side filters over the records already loaded, applied **after** the severity floor. They
+never enter the query plan — no source is asked to search by them, because no source offers it.
+Both ride in the share link (`k=1`, `e=0.5`) and in saved quick views.
+
+That has a consequence the UI states rather than hides: **KEV is 0.44% of all CVEs** — roughly 1,700
+of 381,425. Turning the KEV filter on over a 1,000-record page fetched live from NVD will usually
+show nothing at all, not because nothing is exploited but because the page you happened to load
+holds none of it. Against a local corpus the same filter is exact, because every record is present
+to be filtered. When the filter is on and the answer came from NVD live, the header says so.
+
+## The observatory — `stats.html`
+
+[`stats.html`](stats.html) is the corpus seen whole: 381,425 records, plotted. It reads
+`manifest.json` and `stats.json.gz` — about **200 KB** — and **never a shard**. The most interesting
+public-facing thing here is also the smallest download, so it works on a phone, on hotel wifi, and
+for someone who has no intention of storing 30 MB.
+
+Charts are **inline SVG with no library and no CDN**, theme-aware, self-hosted fonts like the rest of
+the fleet. What it plots:
+
+| Panel | |
+|---|---|
+| **01 · The backlog** — *what is not analysed yet* | How many published records NVD has not finished analysing, month by month, and the NVD status mix behind that count. It is first because it is the largest single caveat on every other figure on the page. |
+| **02 · Known exploited** — *severity is not a work queue* | KEV size, its overlap with the corpus, the severity those records carried at publication, and how many days passed between publication and the KEV listing. Plus the EPSS distribution, and the median EPSS for KEV versus non-KEV records. |
+| **03 · Volume** — *how much gets published* | CVEs per year and per month, with rejections counted separately. |
+| **04 · Severity** — *the distribution, and what "none" means* | The CRITICAL/HIGH/MEDIUM/LOW mix and its drift year by year, with **none** and **no CVSS at all** kept as separate columns. Plus mean NVD-vs-CNA score drift, with sample sizes. |
+| **05 · Weaknesses** — *which mistakes, and whether they move* | The most common CWEs overall and by year. |
+| **06 · Data quality** — *what the records themselves are missing* | Per assigner: CVSS coverage, CWE coverage, median description length. Records with no CWE, no CVSS, or a description too short to act on. Analysis lag as median and p90 days. |
+| **07 · Rhythm** — *when the work happens* | Publications by weekday and by day of month. |
+
+### Five rules every chart on that page obeys
+
+1. **Never rank vendors or CNAs by raw CVE count as "most insecure".** A high count usually means
+   more scrutiny, a working disclosure process and an assigner that publishes. The CNA panel is a
+   *data-quality* table — CVSS coverage, CWE coverage, description length — and it carries that
+   caveat **in the chart**, not in a footnote somebody will crop off.
+2. **Missing is never zero.** "No CVSS" and "CVSS 0.0" are different columns and never merge.
+3. **Every figure states its snapshot and its `manifestSha256`.** A statistic without a snapshot is
+   a rumour.
+4. **The backlog is disclosed, never hidden.** If a third of recent records are unenriched, every
+   statistic derived from them says so on the chart.
+5. **Sample sizes are printed wherever a median or a mean appears.**
+
+Absent KEV or EPSS means those two panels are **omitted, not zeroed** — a chart of zeros is a lie
+about the data, where a missing chart is a fact about the publish.
+
+## Watchlists
+
+A watchlist is a named list of product terms — *your estate* — kept in `localStorage` under
+`cve.watch`, beside the quick views, and nowhere else. Its report answers one question:
+
+> **since your last sync, N new CVEs match your estate.**
+
+The report takes every record published after the watchlist's `since` date, matches each term
+against the description, the CVE id and the vendor:product keys, and runs the whole thing through
+the corpus worker. Three rules make that sentence literally true rather than a turn of phrase:
+
+1. **A report requires a local corpus.** "Since your last sync" is meaningless with no previous
+   sync — NVD live has no yesterday. With no stored snapshot the report refuses and says why,
+   rather than returning a short list that looks complete.
+2. **The window ends at the snapshot, never at *now*.** A snapshot has a date; "up to today" does
+   not. The report says *through 2026-08-21* because that is the last day the stored corpus can
+   speak for.
+3. **A year the store lacks is a refusal, not a smaller answer.** Half a security answer reads
+   exactly like a whole one, so a window touching a missing shard rejects with the years named.
+
+`since` only ever moves when you mark a report reviewed, which is what keeps the headline honest
+across runs. Reaching watchlists is done from the **Data source** dialog, because a watchlist is
+something you do with the corpus — the sidebar still gains no controls.
+
+Export as **CSV**, **JSON** or a **printable HTML** page. Every one of the three is stamped with the
+term list, the window it covers, the snapshot date and the `manifestSha256` it was computed from, so
+whoever receives it can fetch that snapshot and recompute the same answer. That stamp is the whole
+difference between a deliverable and a screenshot.
 
 ## Documents
 
