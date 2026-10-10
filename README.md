@@ -21,7 +21,7 @@ Live at **https://cve.carino.systems**
 - **Export** — CSV or JSON of what is on screen. The JSON carries the query, the retrieval timestamp and both counts.
 - **Shareable views** — the whole view is in the URL hash (`#q=chrome&t=2025&s=HIGH&o=score-high`), so a shared link reproduces what the sender saw. Old links carrying a bare keyword still work.
 - **KEV and EPSS** — cards carry a **KEV** badge when CISA lists the CVE as known-exploited, and an EPSS chip with the exploitation probability. Both are filterable. Neither service can be fetched by a browser at all; see [Exploitation and probability](#exploitation-and-probability--kev-and-epss).
-- **The observatory** — [`stats.html`](stats.html) plots the whole corpus: publication volume, severity mix, the NVD enrichment backlog, analysis lag, CWE and CNA data quality, KEV overlap, EPSS distribution. It downloads ~200 KB and no shards.
+- **The observatory** — [`stats.html`](stats.html) plots the whole corpus: publication volume, severity mix, the NVD enrichment backlog, time since last modification, CWE and CNA data quality, KEV overlap, EPSS distribution. It downloads a few tens of KB (stats.json.gz is ~20 KB) and no shards.
 - **Watchlists** — name a list of product terms once and ask *"what is new for my estate since my last sync?"* Exports to CSV, JSON and a printable HTML, each stamped with the snapshot it was computed from.
 - **Provenance** — the rail states where the data came from and when it was retrieved.
 - **Mobile drawer** — below 900px the filter rail becomes an off-canvas drawer toggled by a ☰ button injected into the shared navbar; it closes via the scrim, the Escape key, or automatically when a quick-tag or Search is tapped.
@@ -132,7 +132,7 @@ to be filtered. When the filter is on and the answer came from NVD live, the hea
 ## The observatory — `stats.html`
 
 [`stats.html`](stats.html) is the corpus seen whole: 381,425 records, plotted. It reads
-`manifest.json` and `stats.json.gz` — about **200 KB** — and **never a shard**. The most interesting
+`manifest.json` and `stats.json.gz` — a few tens of KB together — and **never a shard**. The most interesting
 public-facing thing here is also the smallest download, so it works on a phone, on hotel wifi, and
 for someone who has no intention of storing 30 MB.
 

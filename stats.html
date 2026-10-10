@@ -169,6 +169,14 @@
            measured against — which reads as every chart overflowing slightly. */
         .fig-scroll { overflow-x: auto; overflow-y: hidden; margin: 8px 0 0; padding: 0 0 4px; }
         .fig-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        /* A chart that scrolls keeps its y scale (or its row labels) in view:
+           the strip is a copy of the chart's left margin pinned over the
+           scroll box, so the numbers stay on screen at either end. */
+        .fig-plot { position: relative; }
+        .fig-pin { position: absolute; left: 0; top: 0; pointer-events: none; }
+        .fig .pinbg { fill: var(--bg-card); }
+        .fig .partial { fill-opacity: 0.35; stroke-width: 1; stroke-dasharray: 2 2; }
+        .fig .ln.ref { stroke: #6b6b6b; stroke-width: 1.2; stroke-dasharray: 4 3; }
         .nline.hint:empty { display: none; }
         .nline.hint { color: #5a5a5a; }
         .fig svg { display: block; }
@@ -201,6 +209,8 @@
         }
         details.data > summary:hover, details.data > summary:focus-visible { color: var(--accent); }
         .tblwrap { overflow-x: auto; margin-top: 6px; }
+        /* More columns off to the right: a fade on the clipped edge. */
+        .tblwrap.more { box-shadow: inset -18px 0 14px -14px var(--accent-glow); }
         table.tbl { border-collapse: collapse; width: 100%; min-width: 320px; }
         table.tbl th, table.tbl td {
             padding: 6px 10px 6px 0; text-align: left; vertical-align: top;
@@ -291,7 +301,7 @@
     <div class="kicker">Carino Systems · CVE</div>
     <h1>The Observatory</h1>
     <p>What the corpus actually contains — the enrichment backlog first, because that is the
-       story of the last two years and it is also our own data-quality disclosure. One 200 KB
+       story of the last two years and it is also our own data-quality disclosure. One small
        file, no corpus download, every figure stamped with the snapshot it came from.</p>
 </header>
 
@@ -391,19 +401,28 @@
 
     var DEFAULT_MIRROR = 'https://cve-data.carino.systems';
     var STATS_GUESS = 'stats.json.gz';   // §11 fixes the path; the manifest still decides
-    var STALE_DAYS = 7;                  // §9: past a week the age indicator turns red
+    var STALE_DAYS = 7;                  // SCOPE §6: past a week the age indicator turns red
+    var STALE_PROV_DAYS = 35;            // provenanceFrom older than this: the monthly full re-cut was missed
     var HEX64 = /^[0-9a-f]{64}$/;
 
-    var SEV_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'none'];
+    /* §11: `NONE` is CVSS v3's band for a score of 0.0 — a measurement.
+       `none` is a record with no CVSS score at all. Two keys, never merged.
+       Snapshots published before the split carry no `NONE` key, and their
+       `none` still holds the handful of 0.0 scores as well; `sevLabel` says
+       so rather than calling that count "no score". */
+    var SEV_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'NONE', 'none'];
     var SEV_COLOR = {
-        CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e', none: '#64748b',
+        CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e', NONE: '#14b8a6', none: '#64748b',
     };
     var SEV_LABEL = {
         CRITICAL: 'Critical', HIGH: 'High', MEDIUM: 'Medium', LOW: 'Low',
-        none: 'None / unrated',
+        NONE: 'CVSS 0.0 (None)', none: 'No CVSS score',
     };
     var GOLD = '#eab308';
     var DIM = '#3a3a3a';
+    // NVD's `Deferred`: records it has said it will not analyse. Not the
+    // queue (gold) and not analysed (dim) — its own colour everywhere.
+    var DEFERRED = '#a8a29e';
     var INFO = '#38bdf8';
     var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     var MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -418,6 +437,7 @@
         statsBytes: null,      // byte length actually received
         verified: null,        // true | false | null (could not check)
         verifyNote: '',
+        manifestHashOk: null,  // stats.manifestSha256 recomputed: true | false | null (not checked)
     };
 
     /* ---- small helpers ------------------------------------------------ */
@@ -439,7 +459,11 @@
     function fmtNum(n) { return isNum(n) ? Number(n).toLocaleString() : '—'; }
     function fmtPct(n, digits) {
         if (!isNum(n)) return '—';
-        return n.toFixed(digits == null ? 2 : digits) + '%';
+        var dg = digits == null ? 2 : digits;
+        // A real count too small to show at this precision is not "0.00%":
+        // a printed zero beside a non-zero count reads as a measured nothing.
+        if (n > 0 && Number(n.toFixed(dg)) === 0) return '<' + Math.pow(10, -dg).toFixed(dg) + '%';
+        return n.toFixed(dg) + '%';
     }
     // A share the page computes from two published counts. Arithmetic on
     // measured numbers is fine; inventing a numerator is not.
@@ -460,6 +484,26 @@
         return isInt(v) && v >= 0 ? v : null;
     }
     function nText(n) { return n == null ? 'n not published' : 'n = ' + fmtNum(n); }
+
+    /* Whether this snapshot splits CVSS 0.0 (`NONE`) from no score (`none`).
+       Set once from `severity` in renderAll; every severity figure reads it. */
+    var sevSplit = true;
+    function sevLabel(k) {
+        if (k === 'none' && !sevSplit) return 'No CVSS score (incl. 0.0)';
+        return SEV_LABEL[k] || k;
+    }
+    function sevSum(o) {
+        return SEV_ORDER.reduce(function (a, k) { return a + (o && isNum(o[k]) ? o[k] : 0); }, 0);
+    }
+    // A total is printed with whether it reconciles with the count it should
+    // equal, so a band that went missing cannot shrink the corpus silently.
+    function sumNote(got, want, what) {
+        if (!isNum(want)) return 'The bands sum to ' + fmtNum(got) + '; ' + what + ' is not published to check it against.';
+        if (got === want) return 'The bands sum to ' + fmtNum(got) + ', exactly ' + what + '.';
+        return 'The bands sum to ' + fmtNum(got) + ', but ' + what + ' is ' + fmtNum(want) +
+            ' — ' + fmtNum(Math.abs(want - got)) + ' record(s) are in no published band. Shares are of the bands\' sum.';
+    }
+    var SPLIT_PENDING = 'This snapshot does not split CVSS 0.0 from "no score": its "No CVSS score" count still includes the few records scored 0.0. The split arrives with the next publish; until then the 0.0 band is shown as not published, never as zero.';
 
     /* `cna[].pctScored` and `cna[].pctCwe` are fractions of 1, not percentages:
        the publisher writes round(scored/count, 4), so full coverage is 1 and
@@ -487,6 +531,44 @@
         if (typeof ym !== 'string' || ym.length < 7) return String(ym == null ? '' : ym);
         var m = parseInt(ym.slice(5, 7), 10);
         return (MONTH_ABBR[m - 1] || ym.slice(5, 7)) + ' ' + ym.slice(0, 4);
+    }
+
+    /* The month and year the snapshot was taken in are not over yet. Drawn
+       like a finished period, the newest column reads as a collapse in
+       publishing when it is only a calendar that has not run out. */
+    function partialPeriod(snapIso) {
+        if (typeof snapIso !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(snapIso)) return null;
+        var mo = parseInt(snapIso.slice(5, 7), 10);
+        var day = parseInt(snapIso.slice(8, 10), 10);
+        return {
+            ym: snapIso.slice(0, 7),
+            year: parseInt(snapIso.slice(0, 4), 10),
+            day: day,
+            to: 'to ' + (MONTH_ABBR[mo - 1] || snapIso.slice(5, 7)) + ' ' + day,
+        };
+    }
+
+    /* The publisher counts every dated record into byMonth and writes only the
+       months it saw, so a month absent between the first and the last is a
+       measured zero, not a missing value. Filling it keeps the time axis
+       linear: one column is always one month. */
+    function fillMonths(rows, zero) {
+        rows = rows.filter(function (r) { return /^\d{4}-\d{2}$/.test(r.ym); })
+            .sort(function (a, b) { return a.ym < b.ym ? -1 : a.ym > b.ym ? 1 : 0; });
+        if (!rows.length) return rows;
+        var have = {};
+        rows.forEach(function (r) { have[r.ym] = r; });
+        var out = [];
+        var y = parseInt(rows[0].ym.slice(0, 4), 10), m = parseInt(rows[0].ym.slice(5, 7), 10);
+        var last = rows[rows.length - 1].ym;
+        for (var guard = 0; guard < 2400; guard++) {
+            var ym = y + '-' + (m < 10 ? '0' : '') + m;
+            out.push(have[ym] || zero(ym));
+            if (ym >= last) break;
+            m++;
+            if (m > 12) { m = 1; y++; }
+        }
+        return out;
     }
 
     /* ---- SVG kit ------------------------------------------------------ */
@@ -582,20 +664,40 @@
         var W = Math.max(width, Math.ceil(padL + innerW + padR));
         var H = padT + plotH + padB;
 
-        var max = o.pct ? 100 : niceMax(o.max != null ? o.max : cats.reduce(function (mx, c) {
+        var peak = o.max != null ? o.max : cats.reduce(function (mx, c) {
             var t = 0;
             for (var i = 0; i < series.length; i++) t += Math.max(0, Number(c.values[i]) || 0);
             return Math.max(mx, o.stacked ? t : Math.max.apply(null, [0].concat(c.values.map(function (v) { return Number(v) || 0; }))));
-        }, 0));
+        }, 0);
+        // A log axis is for counts spanning several orders of magnitude, where
+        // a linear one flattens the tail into a hairline. Its top is the next
+        // power of ten and every gridline is ten times the one below.
+        var max = o.pct ? 100 : o.log ? Math.pow(10, Math.max(1, Math.ceil(Math.log(Math.max(1, peak)) / Math.LN10))) : niceMax(peak);
+        var hOf = function (v) {
+            if (o.log) return v >= 1 ? (Math.log(v) / Math.log(max)) * plotH : 0;
+            return (v / max) * plotH;
+        };
 
         var root = svgRoot(W, H, o.aria || '');
-        var y = function (v) { return padT + plotH - (v / max) * plotH; };
+        var y = function (v) { return padT + plotH - hOf(v); };
+        // The pinned strip covers the scale only, not the x-label band under
+        // it: at full height it hid the left half of the first x label.
+        var pin = { w: padL, h: padT + plotH + 5, items: [] };
+        root.__pin = pin;
 
         // Gridlines first so bars sit on top of them.
         var ticks = o.pct ? [0, 25, 50, 75, 100] : [0, max / 2, max];
+        if (o.log) {
+            ticks = [];
+            for (var tv0 = 1; tv0 <= max; tv0 *= 10) ticks.push(tv0);
+        }
         ticks.forEach(function (tv) {
             root.appendChild(s('line', { 'class': 'ax', x1: padL, x2: padL + innerW, y1: y(tv), y2: y(tv) }));
-            root.appendChild(sText(padL - 6, y(tv) + 3, o.pct ? tv + '%' : tickText(tv, max), 'axl', 'end'));
+            var tt = o.fmtTick ? o.fmtTick(tv) : o.pct ? tv + '%'
+                : o.log ? (tv >= 1000000 ? tv / 1000000 + 'M' : tv >= 1000 ? tv / 1000 + 'k' : String(tv))
+                : tickText(tv, max);
+            root.appendChild(sText(padL - 6, y(tv) + 3, tt, 'axl', 'end'));
+            pin.items.push({ x: padL - 6, y: y(tv) + 3, text: tt, cls: 'axl', anchor: 'end' });
         });
 
         var lastLabelEnd = -1e9;
@@ -611,15 +713,18 @@
                 var raw = Math.max(0, Number(c.values[j]) || 0);
                 var v = o.pct ? (total > 0 ? (raw / total) * 100 : 0) : raw;
                 if (v <= 0) continue;
-                var h = (v / max) * plotH;
+                var h = hOf(v);
                 if (h < 0.6) h = 0.6;
-                var top = o.stacked ? base - h : y(v);
+                var top = o.stacked ? base - h : padT + plotH - h;
                 var rect = s('rect', {
                     x: o.stacked ? x : x + (barW / series.length) * j,
                     y: top,
                     width: o.stacked ? barW : barW / series.length,
                     height: h,
                     fill: series[j].color,
+                    // An unfinished period: faded and outlined, never solid.
+                    'class': c.partial ? 'partial' : null,
+                    stroke: c.partial ? series[j].color : null,
                 });
                 tip(rect, (c.title || c.label) + ' — ' + series[j].label + ': ' +
                     (o.fmt ? o.fmt(raw, c, series[j]) : fmtNum(raw)) +
@@ -724,10 +829,14 @@
         var avail = Math.max(60, width - padL - padR);
         var step = Math.max(minStep, n > 1 ? avail / (n - 1) : avail);
         var innerW = n > 1 ? step * (n - 1) : 0;
-        var W = Math.max(width, Math.ceil(padL + innerW + padR + 4));
+        var W = Math.max(width, Math.ceil(padL + innerW + padR));
         var H = padT + plotH + padB;
 
-        var vals = pts.map(function (p) { return Number(p.y); }).filter(isNum);
+        // A null y is a gap in the series (a year with nothing to measure), so
+        // it must not reach Number(), which would turn it into a plotted 0.
+        var yOf = function (p) { return (p.y == null || p.y === '') ? NaN : Number(p.y); };
+        var refOf = function (p) { return p.ref == null ? NaN : Number(p.ref); };
+        var vals = pts.map(yOf).concat(o.ref ? pts.map(refOf) : []).filter(isNum);
         // With no numeric point and no fixed scale, Math.min of an empty list
         // is Infinity and every coordinate below becomes NaN — an SVG that
         // renders as nothing with no explanation. Say there is nothing instead.
@@ -743,24 +852,39 @@
         var x = function (i) { return padL + i * step; };
         var y = function (v) { return padT + plotH - ((v - lo) / (hi - lo)) * plotH; };
 
+        // Scale only, not the x-label band (see `columns`): the first year
+        // label sits on the axis line and the strip used to cover half of it.
+        var pin = { w: padL, h: padT + plotH + 5, items: [] };
+        root.__pin = pin;
         [lo, (lo + hi) / 2, hi].forEach(function (tv) {
             root.appendChild(s('line', { 'class': 'ax', x1: padL, x2: padL + Math.max(innerW, 1), y1: y(tv), y2: y(tv) }));
-            root.appendChild(sText(padL - 6, y(tv) + 3, o.fmtTick ? o.fmtTick(tv) : tickText(tv, hi), 'axl', 'end'));
+            var tt = o.fmtTick ? o.fmtTick(tv) : tickText(tv, hi);
+            root.appendChild(sText(padL - 6, y(tv) + 3, tt, 'axl', 'end'));
+            pin.items.push({ x: padL - 6, y: y(tv) + 3, text: tt, cls: 'axl', anchor: 'end' });
         });
 
-        var d = '';
-        pts.forEach(function (p, i) {
-            if (!isNum(Number(p.y))) return;
-            d += (d ? ' L' : 'M') + x(i).toFixed(1) + ' ' + y(Number(p.y)).toFixed(1);
-        });
-        if (d) root.appendChild(s('path', { 'class': 'ln', d: d, stroke: o.color || GOLD }));
+        // A missing point breaks the line rather than bridging it: a straight
+        // segment across a gap would draw a value nobody measured.
+        var path = function (get, cls, color) {
+            var d = '', pen = false;
+            pts.forEach(function (p, i) {
+                var v = get(p);
+                if (!isNum(v)) { pen = false; return; }
+                d += (pen ? ' L' : (d ? ' M' : 'M')) + x(i).toFixed(1) + ' ' + y(v).toFixed(1);
+                pen = true;
+            });
+            if (d) root.appendChild(s('path', { 'class': cls, d: d, stroke: color }));
+        };
+        if (o.ref) path(refOf, 'ln ref', o.ref.color || DIM);
+        path(yOf, 'ln', o.color || GOLD);
 
         var lastLabelEnd = -1e9;
         pts.forEach(function (p, i) {
-            if (isNum(Number(p.y))) {
-                var dot = s('circle', { cx: x(i), cy: y(Number(p.y)), r: n > 60 ? 1.6 : 2.6, 'class': 'dot', fill: o.color || GOLD });
-                tip(dot, p.label + ': ' + (o.fmtValue ? o.fmtValue(Number(p.y), p) : String(p.y)) +
-                    (p.n != null ? '  (n = ' + fmtNum(p.n) + ')' : ''));
+            if (isNum(yOf(p))) {
+                var dot = s('circle', { cx: x(i), cy: y(yOf(p)), r: n > 60 ? 1.6 : 2.6, 'class': 'dot', fill: o.color || GOLD });
+                tip(dot, p.label + ': ' + (o.fmtValue ? o.fmtValue(yOf(p), p) : String(p.y)) +
+                    (p.n != null ? '  (n = ' + fmtNum(p.n) + ')' : '') +
+                    (o.ref && o.ref.tip && isNum(refOf(p)) ? ' · ' + o.ref.tip(refOf(p)) : ''));
                 root.appendChild(dot);
             }
             var lab = o.xLabel ? o.xLabel(p, i) : p.label;
@@ -781,12 +905,16 @@
        those with today's snapshot would be a claim of freshness the file does
        not make: stats.json names the snapshot that actually measured them in
        `provenanceFrom`, and that is the date that goes under the figure. */
-    function stamp(measuredAt) {
+    /* `note` names a second input the figure was computed from that has its
+       own date — the KEV catalogue, the EPSS model run — which can trail the
+       corpus snapshot by days. */
+    function stamp(measuredAt, note) {
         var snap = measuredAt || (app.stats ? app.stats.snapshot : (app.manifest ? app.manifest.snapshot : ''));
         var hash = app.stats && typeof app.stats.manifestSha256 === 'string' ? app.stats.manifestSha256 : '';
         var d = el('div', 'stamp');
         d.appendChild(document.createTextNode(
             (measuredAt ? 'measured ' : 'snapshot ') + (snap ? ymd(snap) : 'not published') +
+            (note ? ' · ' + note : '') +
             ' · manifestSha256 ' + (hash ? shortHash(hash) : 'not published')));
         if (hash) d.title = 'manifestSha256 ' + hash;
         return d;
@@ -820,6 +948,7 @@
             var d = el('div', 'tile');
             d.appendChild(el('div', 't-k', t.k));
             var v = el('div', 't-v' + (t.gold ? ' gold' : ''), t.v);
+            if (t.color) v.style.color = t.color;
             d.appendChild(v);
             if (t.s) d.appendChild(el('div', 't-s', t.s));
             wrap.appendChild(d);
@@ -865,18 +994,20 @@
         }
         if (o.legend) legend(fig, o.legend);
 
+        var plot = el('div', 'fig-plot');
         var scroll = el('div', 'fig-scroll');
-        fig.appendChild(scroll);
+        plot.appendChild(scroll);
+        fig.appendChild(plot);
         var hint = el('div', 'nline hint');
         fig.appendChild(hint);
 
         if (o.note) fig.appendChild(el('div', 'nline', o.note));
         if (o.nodes) o.nodes.forEach(function (n) { fig.appendChild(n); });
         if (o.table) fig.appendChild(dataTable(o.table));
-        fig.appendChild(stamp(o.measuredAt));
+        fig.appendChild(stamp(o.measuredAt, o.stampNote));
         host.appendChild(fig);
 
-        var entry = { scroll: scroll, hint: hint, build: o.build, scrollEnd: !!o.scrollEnd, hasTable: !!o.table, lastW: -1 };
+        var entry = { plot: plot, scroll: scroll, hint: hint, pin: null, build: o.build, scrollEnd: !!o.scrollEnd, hasTable: !!o.table, lastW: -1 };
         figures.push(entry);
         drawFigure(entry);
         return fig;
@@ -890,6 +1021,8 @@
         if (Math.abs(w - entry.lastW) < 3) return;
         entry.lastW = w;
         clear(entry.scroll);
+        if (entry.pin && entry.pin.parentNode) entry.pin.parentNode.removeChild(entry.pin);
+        entry.pin = null;
         var node = null;
         try {
             node = entry.build(w);
@@ -918,6 +1051,14 @@
                 entry.hint.textContent = 'Wider than this screen — the chart scrolls sideways.' +
                     (entry.hasTable ? ' Every value is listed in the table below it.' : '');
             }
+            // The scale is drawn inside the scrolling drawing, so at any scroll
+            // position but the far left it would be off screen — a chart of
+            // gridlines with no numbers. A pinned copy keeps it in view.
+            if (node.__pin) {
+                entry.pin = pinStrip(node.__pin);
+                entry.pin.style.top = entry.scroll.offsetTop + 'px';
+                entry.plot.appendChild(entry.pin);
+            }
         } else {
             entry.scroll.removeAttribute('tabindex');
             entry.scroll.removeAttribute('role');
@@ -929,6 +1070,17 @@
         if (entry.scrollEnd) {
             try { entry.scroll.scrollLeft = entry.scroll.scrollWidth; } catch (e) { /* ignore */ }
         }
+    }
+
+    function pinStrip(p) {
+        var svg = s('svg', { width: p.w, height: p.h, viewBox: '0 0 ' + p.w + ' ' + p.h, 'class': 'fig-pin', 'aria-hidden': 'true' });
+        svg.appendChild(s('rect', { x: 0, y: 0, width: p.w, height: p.h, 'class': 'pinbg' }));
+        p.items.forEach(function (it) {
+            var t = sText(it.x, it.y, it.text, it.cls, it.anchor);
+            if (it.fill) t.setAttribute('fill', it.fill);
+            svg.appendChild(t);
+        });
+        return svg;
     }
 
     function redrawAll() { figures.forEach(drawFigure); }
@@ -1033,6 +1185,28 @@
         clear(hv);
         var hash = st && typeof st.manifestSha256 === 'string' ? st.manifestSha256 : '';
         hv.appendChild(document.createTextNode(hash || 'not published in this snapshot'));
+        if (hash) {
+            if (app.manifestHashOk === true) {
+                hv.appendChild(el('span', 'ok', '  ✓ recomputed from the manifest above'));
+            } else if (app.manifestHashOk === false) {
+                hv.appendChild(el('span', 'bad', '  ✗ not the hash of the manifest this mirror serves'));
+            }
+            // The recipe is printed, not left in a source comment: a hash a
+            // reader cannot reproduce is an assertion, not provenance.
+            var how = el('details', 'data');
+            how.style.wordBreak = 'normal';
+            how.appendChild(el('summary', null, 'How to recompute it'));
+            how.appendChild(el('div', 'nline',
+                'Fetch manifest.json and delete its "stats" key (a file cannot carry the hash of a file that names its hash). ' +
+                'Serialise the rest as JSON with no whitespace, keys in the order the file has them, and append one newline. ' +
+                'The SHA-256 of those bytes is this hash. In node:'));
+            var cmd = el('div', 'nline mono',
+                'node -e "const m=require(\'./manifest.json\');delete m.stats;' +
+                'console.log(require(\'crypto\').createHash(\'sha256\').update(JSON.stringify(m)+\'\\n\').digest(\'hex\'))"');
+            cmd.style.wordBreak = 'break-all';
+            how.appendChild(cmd);
+            hv.appendChild(how);
+        }
 
         var links = $('footLinks');
         clear(links);
@@ -1204,6 +1378,21 @@
         });
     }
 
+    /* Recompute stats.manifestSha256 from the manifest this page just read,
+       by the recipe printed under it. A failure to hash (no Web Crypto) is
+       "not checked", never a mismatch. */
+    function checkManifestHash() {
+        var m = app.manifest, st = app.stats;
+        var want = st && typeof st.manifestSha256 === 'string' ? st.manifestSha256.toLowerCase() : '';
+        if (!m || !HEX64.test(want) || typeof TextEncoder !== 'function') return Promise.resolve();
+        var copy = {};
+        Object.keys(m).forEach(function (k) { if (k !== 'stats') copy[k] = m[k]; });
+        return Promise.resolve()
+            .then(function () { return needSync().sha256Hex(new TextEncoder().encode(JSON.stringify(copy) + '\n')); })
+            .then(function (got) { app.manifestHashOk = (got === want); },
+                  function () { app.manifestHashOk = null; });
+    }
+
     /* ---- error surface -------------------------------------------------- */
 
     function showError(err) {
@@ -1226,6 +1415,13 @@
             what = [
                 'The bytes that arrived are not the bytes the manifest describes. Nothing is shown, because a figure computed from an unverified file is worth less than no figure at all.',
                 'Usually this is a half-finished publish or a caching proxy in the way. Reload in a minute; if it persists, the mirror is serving a corrupt file.',
+            ];
+        } else if (err && err.status === 404 && /\/manifest\.json(\s|$)/.test(err.url || msg)) {
+            // The manifest itself is missing: nothing here is a corpus at all,
+            // which is a different problem from a corpus missing one file.
+            heading = 'No CVE corpus at this address';
+            what = [
+                'The server answered, but it has no manifest.json. Either the address is not a CVE-data mirror, or it points one level too high or too low — the manifest sits at the root of the published tree.',
             ];
         } else if (err && err.status === 404) {
             heading = 'The statistics file is not on this mirror';
@@ -1312,8 +1508,8 @@
 
     function panelBacklog(st) {
         var b = obj(st.backlog);
-        var sec = panel('backlog', '01 · The backlog', 'What is not analysed yet',
-            'NVD publishes a CVE long before it analyses one. Until that analysis lands the record has no NVD CVSS, no CWE and no CPE — it is a title and a date. This is the first panel because it is the largest single caveat on every other number here, and because there is no other self-hostable public tracker of it.');
+        var sec = panel('backlog', '01 · The backlog', 'What NVD has not analysed',
+            'NVD publishes a CVE long before it analyses one, and some it never will. Two different things are counted here and never added into one figure: the queue — Received, Awaiting or Undergoing Analysis, records NVD will get to — and Deferred, records NVD has said it will not analyse. Either way the record has no NVD CVSS, no CWE and no CPE; it is a title and a date. This is the first panel because it is the largest single caveat on every other number here, and because there is no other self-hostable public tracker of it.');
 
         // A missing backlog block costs the backlog figures and nothing else:
         // status and lag are their own measurements and still stand.
@@ -1325,50 +1521,108 @@
         var total = (b && isNum(b.total)) ? b.total : null;
         var pct = (b && isNum(b.pct)) ? b.pct : share(unenriched, total);
 
+        /* Deferred. Published in `backlog` from the snapshot that split it out;
+           older snapshots carry it only as `status.Deferred`, which is the same
+           measurement (vulnStatus verbatim), so the tile falls back to it and
+           says where the number came from. Neither present: not published. */
+        var statusObj = obj(st.status);
+        var defFromBacklog = !!(b && isNum(b.deferred));
+        var deferred = defFromBacklog ? b.deferred
+            : (statusObj && isNum(statusObj.Deferred) ? statusObj.Deferred : null);
+        var defPct = (defFromBacklog && isNum(b.deferredPct)) ? b.deferredPct : share(deferred, total);
+        // Analysed = Analyzed + Modified. With the deferred count it is the
+        // remainder of the backlog total; without it, the status table's two
+        // analysed states, read directly — never "total minus the queue",
+        // which silently counted Deferred as analysed.
+        var analysed = null, analysedFrom = '';
+        if (isNum(unenriched) && isNum(total) && isNum(deferred)) {
+            analysed = total - unenriched - deferred;
+            analysedFrom = 'the total less the queue and Deferred';
+        } else if (statusObj && isNum(statusObj.Analyzed) && isNum(statusObj.Modified)) {
+            analysed = statusObj.Analyzed + statusObj.Modified;
+            analysedFrom = 'Analyzed + Modified in the status table';
+        }
+
         if (b) tiles(sec, [
-            { k: 'Unenriched', v: fmtNum(unenriched), gold: true, s: 'records with no NVD analysis' },
+            { k: 'Unenriched (the queue)', v: fmtNum(unenriched), gold: true, s: 'Received, Awaiting or Undergoing Analysis' },
+            {
+                k: 'Deferred', v: deferred == null ? '—' : fmtNum(deferred), color: deferred == null ? null : DEFERRED,
+                s: deferred == null ? 'not published by this snapshot'
+                    : defFromBacklog ? 'NVD will not analyse these · ' + fmtPct(defPct, 2) + (isNum(b.deferredPct) ? ' as published' : ' computed')
+                    : 'NVD will not analyse these · from the status table below (' + fmtPct(defPct, 2) + ' computed)',
+            },
             { k: 'Of a corpus of', v: fmtNum(total), s: 'records counted for the backlog' },
-            { k: 'Share', v: fmtPct(pct, 2), s: (b && isNum(b.pct)) ? 'as published' : 'computed from the two counts above' },
-            { k: 'Enriched', v: (isNum(unenriched) && isNum(total)) ? fmtNum(total - unenriched) : '—', s: 'the difference, nothing more' },
+            { k: 'Queue share', v: fmtPct(pct, 2), s: (b && isNum(b.pct)) ? 'unenriched, as published' : 'unenriched, computed from the counts' },
+            { k: 'Analysed or modified', v: fmtNum(analysed), s: analysed == null ? 'not computable from this snapshot' : analysedFrom },
         ]);
 
         // --- by month: stacked columns, plus the share as its own line ---
-        var months = arr(b && b.byMonth).filter(function (r) { return obj(r) && typeof r.ym === 'string'; });
+        var part = partialPeriod(st.snapshot);
+        var rawMonths = arr(b && b.byMonth).filter(function (r) { return obj(r) && typeof r.ym === 'string'; });
+        // The monthly Deferred split exists only from the publish that added
+        // it. Any month without the key means this snapshot predates it, and
+        // then no month is split — a column of zeros would claim none were.
+        var defMonthly = rawMonths.length > 0 && rawMonths.every(function (r) { return isNum(r.deferred); });
+        var months = fillMonths(rawMonths,
+            function (ym) { return defMonthly ? { ym: ym, unenriched: 0, deferred: 0, total: 0 } : { ym: ym, unenriched: 0, total: 0 }; });
         var bad = [];
         var cats = [];
         months.forEach(function (r) {
             var t = isNum(r.total) ? r.total : null;
             var u = isNum(r.unenriched) ? r.unenriched : null;
-            if (t == null || u == null) { bad.push(r.ym + ' (a count is missing)'); return; }
-            if (u > t) { bad.push(r.ym + ' (unenriched ' + fmtNum(u) + ' exceeds total ' + fmtNum(t) + ')'); return; }
-            cats.push({ label: ymLabel(r.ym), title: ymLabel(r.ym), ym: r.ym, values: [u, t - u], total: t, un: u });
+            var dd = defMonthly ? (isNum(r.deferred) ? r.deferred : null) : 0;
+            if (t == null || u == null || dd == null) { bad.push(r.ym + ' (a count is missing)'); return; }
+            if (u + dd > t) { bad.push(r.ym + ' (unenriched + deferred ' + fmtNum(u + dd) + ' exceeds total ' + fmtNum(t) + ')'); return; }
+            var isPart = !!(part && r.ym === part.ym);
+            cats.push({
+                label: ymLabel(r.ym), title: ymLabel(r.ym) + (isPart ? ' (partial, ' + part.to + ')' : ''),
+                ym: r.ym, partial: isPart, values: defMonthly ? [u, dd, t - u - dd] : [u, t - u], total: t, un: u, def: defMonthly ? dd : null,
+            });
         });
+        var partNote = (part && cats.length && cats[cats.length - 1].partial)
+            ? 'The last column, ' + ymLabel(part.ym) + ', is a month still in progress: it counts publications ' + part.to +
+              ' only and is drawn faded and outlined. It is not a fall in publishing.'
+            : '';
+        var defNote = defMonthly ? ''
+            : 'This snapshot does not split Deferred out by month, so the dark part of each column is everything not in the queue — analysed, modified or deferred. The monthly Deferred series arrives with the next publish; it is not drawn as zero meanwhile.';
 
         if (cats.length) {
-            var series = [
-                { key: 'un', label: 'Unenriched', color: GOLD },
-                { key: 'en', label: 'Enriched', color: DIM },
+            var series = defMonthly ? [
+                { key: 'un', label: 'Unenriched (queue)', color: GOLD },
+                { key: 'def', label: 'Deferred', color: DEFERRED },
+                { key: 'an', label: 'Analysed or modified', color: DIM },
+            ] : [
+                { key: 'un', label: 'Unenriched (queue)', color: GOLD },
+                { key: 'rest', label: 'Not in the queue (analysed, modified or deferred)', color: DIM },
             ];
             figure(sec, {
                 title: 'The backlog by publication month',
-                sub: 'Each column is one month of published CVEs, split by whether NVD has analysed them yet. The gold is the queue.',
-                legend: [{ color: GOLD, label: 'Unenriched' }, { color: DIM, label: 'Enriched' }],
+                sub: defMonthly
+                    ? 'Each column is one month of published CVEs, split three ways by what NVD has done with them. The gold is the queue; the stone grey is what NVD has deferred and will not analyse.'
+                    : 'Each column is one month of published CVEs, split by whether they are in NVD\'s queue. The gold is the queue.',
+                legend: series.map(function (sr) { return { color: sr.color, label: sr.label }; }),
                 scrollEnd: true,
                 build: function (w) {
                     return columns(w, {
                         cats: cats, series: series, stacked: true, height: 160, minBarW: 7, gap: 2,
-                        xLabel: function (c) { return /-01$/.test(c.ym) ? c.ym.slice(0, 4) : null; },
-                        aria: 'Stacked columns: unenriched and enriched CVEs per publication month, ' +
+                        xLabel: function (c, i) { return (i === 0 || /-01$/.test(c.ym)) ? c.ym.slice(0, 4) : null; },
+                        aria: 'Stacked columns: ' + series.map(function (sr) { return sr.label; }).join(', ') + ' CVEs per publication month, ' +
                             cats[0].ym + ' to ' + cats[cats.length - 1].ym + '.',
                     });
                 },
-                note: bad.length ? 'Months left out because their published counts do not add up: ' + bad.join(', ') + '.' : '',
+                note: [partNote, defNote, bad.length ? 'Months left out because their published counts do not add up: ' + bad.join(', ') + '.' : '']
+                    .filter(Boolean).join(' '),
                 table: {
                     summary: 'Show the numbers (' + cats.length + ' months)',
-                    head: ['Month', 'Published', 'Unenriched', 'Share'],
-                    align: ['', 'n', 'n', 'n'],
+                    head: defMonthly
+                        ? ['Month', 'Published', 'Unenriched', 'Deferred', 'Analysed', 'Queue share', 'Deferred share']
+                        : ['Month', 'Published', 'Unenriched', 'Deferred', 'Queue share'],
+                    align: defMonthly ? ['', 'n', 'n', 'n', 'n', 'n', 'n'] : ['', 'n', 'n', 'n', 'n'],
                     rows: cats.map(function (c) {
-                        return [c.ym, fmtNum(c.total), fmtNum(c.un), fmtPct(share(c.un, c.total), 1)];
+                        var m = c.ym + (c.partial ? ' (partial, ' + part.to + ')' : '');
+                        return defMonthly
+                            ? [m, fmtNum(c.total), fmtNum(c.un), fmtNum(c.def), fmtNum(c.total - c.un - c.def), fmtPct(share(c.un, c.total), 1), fmtPct(share(c.def, c.total), 1)]
+                            : [m, fmtNum(c.total), fmtNum(c.un), 'not published', fmtPct(share(c.un, c.total), 1)];
                     }),
                 },
             });
@@ -1385,11 +1639,11 @@
                         min: 0, max: 100, height: 120, minStep: 5, color: GOLD,
                         fmtTick: function (v) { return Math.round(v) + '%'; },
                         fmtValue: function (v) { return v.toFixed(1) + '%'; },
-                        xLabel: function (p) { return /-01$/.test(p.ym) ? p.ym.slice(0, 4) : null; },
+                        xLabel: function (p, i) { return (i === 0 || /-01$/.test(p.ym)) ? p.ym.slice(0, 4) : null; },
                         aria: 'Line: percentage of each month\'s CVEs that are unenriched.',
                     });
                 },
-                note: 'n is each month\'s published count and is carried in the tooltip of every point; the table above lists all of them.',
+                note: 'n is each month\'s published count and is carried in the tooltip of every point; the table above lists all of them. A month in which nothing was published has no share, and the line breaks there rather than drawing one.',
             });
         }
 
@@ -1401,7 +1655,8 @@
             var sum = keys.reduce(function (a, k) { return a + status[k]; }, 0);
             figure(sec, {
                 title: 'Where every record sits in NVD\'s queue',
-                sub: 'vulnStatus, verbatim from NVD, over ' + fmtNum(sum) + ' records. These are the states the backlog count is drawn from.',
+                sub: 'vulnStatus, verbatim from NVD, over ' + fmtNum(sum) + ' records. These are the states the backlog counts are drawn from, coloured as above.',
+                legend: [{ color: GOLD, label: 'the queue (unenriched)' }, { color: DEFERRED, label: 'Deferred (will not be analysed)' }, { color: DIM, label: 'analysed or modified' }],
                 build: function (w) {
                     return hbars(w, {
                         rows: keys.map(function (k) {
@@ -1410,7 +1665,7 @@
                                 label: k,
                                 bars: [{
                                     value: v,
-                                    color: /Analy(z|s)ed|Modified/.test(k) ? DIM : GOLD,
+                                    color: /Analy(z|s)ed|Modified/.test(k) ? DIM : (k === 'Deferred' ? DEFERRED : GOLD),
                                     value_text: fmtNum(v),
                                     tipText: fmtNum(v) + ' (' + fmtPct(share(v, sum), 1) + ')',
                                 }],
@@ -1433,35 +1688,58 @@
             var byYear = arr(lag.byYear).filter(function (r) { return obj(r) && isInt(r.year) && isNum(r.medianDays); });
             var lagN = nOf(lag);
             var anyYearN = byYear.some(function (r) { return nOf(r) != null; });
-            tiles(sec, [
-                { k: 'Median lag', v: fmtDays(lag.medianDays), gold: true, s: 'publication → last modification · ' + nText(lagN) },
-                { k: 'p90 lag', v: fmtDays(lag.p90Days), s: 'nine in ten land inside this · ' + nText(lagN) },
-            ]);
+            /* `lastModified` is the most recent touch of any kind, and NVD
+               re-touches old records in bulk (a re-score sweep, a CPE or schema
+               migration). After such a sweep every record's last modification
+               is recent, and "publication → last modification" collapses into
+               the plain age of the record. So the corpus-wide median and p90
+               are not headline tiles — they would read as a processing delay —
+               and the per-year line is drawn against the age of each year at
+               the snapshot, computed here, so a reader can see whether the two
+               coincide. Which they do is measured, not assumed. */
+            var snapD = parseDate(st.snapshot);
+            var ageOf = function (year) {
+                if (!snapD) return null;
+                var a = Date.UTC(year, 0, 1);
+                var z = Math.min(Date.UTC(year + 1, 0, 1), snapD.getTime());
+                return z > a ? Math.round((snapD.getTime() - (a + z) / 2) / 86400000) : null;
+            };
+            var tracking = byYear.filter(function (r) { var g = ageOf(r.year); return g != null && g > 0 && r.medianDays >= 0.8 * g; }).length;
             if (byYear.length) {
+                var lagHi = byYear.reduce(function (mx, r) { return Math.max(mx, r.medianDays, ageOf(r.year) || 0); }, 0);
                 figure(sec, {
                     title: 'Median days from publication to last modification, by year',
-                    sub: 'What the corpus records is `lastModified`, which is the most recent touch of any kind — a first analysis for a new record, but a re-score or a CPE correction for an old one. Read the early years as "how long ago NVD last revisited 1999", not as a delay anyone waited through.',
-                    caveatLead: 'Sample size:',
-                    caveat: anyYearN
-                        ? 'Each point carries the number of records its median was taken over: it is in the tooltip, in the n column of the table below, and it is what makes an early year\'s spike readable as ten records rather than a decade going wrong.'
-                        : 'This snapshot publishes no n for these medians, so this page prints none. A median without its sample size is a shape, not a measurement.',
+                    sub: 'The corpus records `lastModified`, the most recent touch of any kind — a first analysis for a new record, but a re-score or a CPE correction for an old one. The dashed line is the age of each year at the snapshot (from its midpoint), computed on this page: where the gold line sits on it, this is how old the records are, not how long anyone waited.',
+                    caveatLead: 'Not a processing delay.',
+                    caveat: (tracking && tracking >= byYear.length * 0.8
+                            ? 'In this snapshot the median is at least 80% of the year\'s age in ' + tracking + ' of ' + byYear.length + ' years: nearly every record, however old, was last modified recently, which is what a bulk re-touch by NVD looks like. Read the line as the age of the records. '
+                            : 'Where the gold line sits on the dashed one, the records of that year were last modified recently and the figure is their age, not a delay. ') +
+                        'The corpus-wide median (' + fmtDays(lag.medianDays) + ') and p90 (' + fmtDays(lag.p90Days) + ') are in the table, not in a tile, for the same reason. ' +
+                        (anyYearN
+                            ? 'Each point carries the number of records its median was taken over, in the tooltip and the n column of the table.'
+                            : 'This snapshot publishes no n for these medians, so this page prints none. A median without its sample size is a shape, not a measurement.'),
+                    legend: [{ color: GOLD, label: 'median, publication → last modification' }, { color: '#6b6b6b', label: 'age of the year at the snapshot' }],
+                    scrollEnd: true,
                     build: function (w) {
                         return linechart(w, {
-                            pts: byYear.map(function (r) { return { label: String(r.year), y: r.medianDays, n: nOf(r) }; }),
-                            min: 0, height: 130, minStep: 26, color: GOLD,
-                            fmtTick: function (v) { return Math.round(v) + 'd'; },
+                            pts: byYear.map(function (r) { return { label: String(r.year), y: r.medianDays, n: nOf(r), ref: ageOf(r.year) }; }),
+                            ref: { tip: function (v) { return 'age of the year ' + fmtDays(Math.round(v)); } },
+                            min: 0, max: niceMax(lagHi), height: 130, minStep: 22, color: GOLD,
+                            fmtTick: function (v) { return (v >= 1000 ? Math.round(v / 1000) + 'k' : Math.round(v)) + ' d'; },
                             fmtValue: function (v) { return fmtDays(v); },
-                            aria: 'Line: median days from publication to NVD analysis, per year.',
+                            aria: 'Line: median days from publication to last modification, per publication year, against a dashed line for the age of each year at the snapshot.',
                         });
                     },
                     table: {
-                        head: ['Year', 'Median days', 'p90 days', 'n'],
-                        align: ['', 'n', 'n', 'n'],
+                        head: ['Year', 'Median days', 'p90 days', 'Age of the year', 'n'],
+                        align: ['', 'n', 'n', 'n', 'n'],
                         rows: byYear.map(function (r) {
                             var n = nOf(r);
                             return [r.year, fmtNum(r.medianDays), isNum(r.p90Days) ? fmtNum(r.p90Days) : 'not published',
+                                ageOf(r.year) == null ? '—' : fmtNum(ageOf(r.year)),
                                 n == null ? 'not published' : fmtNum(n)];
-                        }),
+                        }).concat([['All years', fmtNum(lag.medianDays), isNum(lag.p90Days) ? fmtNum(lag.p90Days) : 'not published', '—',
+                            lagN == null ? 'not published' : fmtNum(lagN)]]),
                     },
                 });
             }
@@ -1471,8 +1749,8 @@
         var d = el('div', 'banner');
         d.appendChild(el('b', null, 'Rule 4, and it binds the rest of this page. '));
         d.appendChild(document.createTextNode(
-            'Everything below is computed over a corpus that includes these unenriched records. They are never dropped to make a chart tidier: ' +
-            'in the severity panel they appear in their own "none / unrated" column, and in the CWE panel they simply carry no CWE. ' +
+            'Everything below is computed over a corpus that includes these unenriched and deferred records. They are never dropped to make a chart tidier: ' +
+            'one with no score from anyone appears in the severity panel\'s own "No CVSS score" column, and in the CWE panel they simply carry no CWE. ' +
             'A severity split that quietly excluded them would report a cleaner, wronger world.'));
         $('banners').appendChild(d);
     }
@@ -1499,6 +1777,12 @@
         var catalogue = isNum(kev.count) ? kev.count : null;
         var inCorpus = isNum(kev.inCorpus) ? kev.inCorpus : null;
 
+        // The catalogue and the EPSS run have dates of their own, which can
+        // trail the corpus snapshot by days; the manifest publishes both.
+        var enrich = obj(app.manifest && app.manifest.enrich) || {};
+        var kevAt = obj(enrich.kev) && typeof enrich.kev.generated === 'string' ? 'KEV catalogue of ' + ymd(enrich.kev.generated) : '';
+        var epssAt = obj(enrich.epss) && typeof enrich.epss.date === 'string' ? 'EPSS scores of ' + ymd(enrich.epss.date) : '';
+
         /* The cross-tab. `severityAtPublish` is the severity a record carried
            when CISA listed it; the publisher writes null there on purpose,
            because a shard holds one severity per record — today's — and NVD
@@ -1514,7 +1798,7 @@
         // The denominator for "share of KEV" is the population the cross-tab
         // counts — corpus records that are in KEV — so it is summed from the
         // cross-tab itself and never from the catalogue size.
-        var xtabTotal = SEV_ORDER.reduce(function (a, k) { return a + (isNum(xtab[k]) ? xtab[k] : 0); }, 0);
+        var xtabTotal = sevSum(xtab);
         var kevDenom = xtabTotal > 0 ? xtabTotal : inCorpus;
         var overlap = isNum(kev.overlapPct) ? kev.overlapPct : share(inCorpus, st.records);
 
@@ -1541,10 +1825,12 @@
             var allShare = share(all, st.records);
             var kevShare = share(inKev, kevDenom);
             rows.push({
-                label: SEV_LABEL[k] || k,
+                label: sevLabel(k),
                 sub: (all != null && inKev != null)
                     ? fmtNum(inKev) + ' of ' + fmtNum(all) + ' known-exploited (' + fmtPct(share(inKev, all), 3) + ')'
-                    : 'cross-tab not published for this band',
+                    : (k === 'NONE' && !sevSplit)
+                        ? 'not split out by this snapshot — counted under "No CVSS score (incl. 0.0)"'
+                        : 'cross-tab not published for this band',
                 bars: [
                     {
                         value: allShare == null ? 0 : allShare, missing: allShare == null,
@@ -1559,7 +1845,7 @@
                 ],
             });
             tableRows.push([
-                SEV_LABEL[k] || k, fmtNum(all), fmtPct(allShare, 2),
+                sevLabel(k), fmtNum(all), fmtPct(allShare, 2),
                 inKev == null ? 'not published' : fmtNum(inKev),
                 fmtPct(kevShare, 2), fmtPct(share(inKev, all), 3),
             ]);
@@ -1574,13 +1860,20 @@
                     ? ' The bands are each record\'s severity today, not the severity it carried on the day CISA listed it: NVD rescores records after the fact, and a corpus that keeps one severity per record cannot remember the earlier one.'
                     : ''),
             legend: [{ color: SEV_COLOR.CRITICAL, label: 'share of all records (band colour)' }, { color: INFO, label: 'share of KEV' }, { hollow: true, label: 'not published' }],
+            stampNote: kevAt,
+            note: [
+                'Corpus: ' + sumNote(sevSum(sev), st.records, 'the snapshot\'s record count'),
+                xtabName ? 'KEV: ' + sumNote(xtabTotal, inCorpus, 'the KEV entries in this corpus') : '',
+                sevSplit ? '' : SPLIT_PENDING,
+            ].filter(Boolean).join(' '),
             build: function (w) {
                 return hbars(w, { rows: rows, max: 100, barH: 10, rowPad: 16, valueW: 68, aria: 'Grouped horizontal bars: each severity band as a share of the whole corpus and as a share of the KEV catalogue.' });
             },
             table: {
                 head: ['Band', 'Records', '% of corpus', 'In KEV', '% of KEV', '% of band in KEV'],
                 align: ['', 'n', 'n', 'n', 'n', 'n'],
-                rows: tableRows,
+                rows: tableRows.concat([['All bands', fmtNum(sevSum(sev)), fmtPct(share(sevSum(sev), st.records), 2),
+                    xtabName ? fmtNum(xtabTotal) : 'not published', xtabName ? fmtPct(share(xtabTotal, kevDenom), 2) : '—', '—']]),
                 caption: xtabName === 'severityNow'
                     ? 'severityNow is the severity each known-exploited record carries in this snapshot. severityAtPublish — the severity it carried when CISA listed it — is not published, because this corpus does not remember it.'
                     : (xtabName === 'severityAtPublish'
@@ -1601,6 +1894,7 @@
             figure(sec, {
                 title: 'How long a CVE waits before CISA calls it exploited',
                 sub: 'Two published order statistics on one scale. Nothing between them is measured, so nothing between them is drawn.',
+                stampNote: kevAt,
                 caveatLead: 'Sample size:',
                 caveat: ttkN != null
                     ? 'Both figures are taken over the ' + fmtNum(ttkN) + ' record(s) that are in this corpus, are in the KEV catalogue, and carry a readable date at both ends — not over the ' + fmtNum(catalogue) + ' entries of the catalogue as a whole.'
@@ -1634,8 +1928,9 @@
             if (buckets.length) {
                 figure(sec, {
                     title: 'Exploit-prediction scores across the corpus',
-                    sub: 'FIRST\'s EPSS: the modelled probability of exploitation in the next 30 days. Note the axis — almost everything sits in the lowest bucket, which is what makes the tail interesting.' +
+                    sub: 'FIRST\'s EPSS: the modelled probability of exploitation in the next 30 days. Note the axis — it is logarithmic, each gridline ten times the one below, because almost everything sits in the lowest bucket and on a linear axis the tail that makes this interesting would be a hairline.' +
                         (epssN != null ? ' Drawn over the ' + fmtNum(epssN) + ' records that carry a score.' : ''),
+                    stampNote: [epssAt, kevAt].filter(Boolean).join(' · '),
                     caveatLead: 'A model, not an observation.',
                     caveat: 'EPSS is a prediction; KEV is a report of something that happened. They disagree often, and where they do, KEV wins.' +
                         (epssNoScore
@@ -1649,8 +1944,8 @@
                                 return { label: lo.toFixed(1), title: lo.toFixed(2) + '–' + hi.toFixed(2), values: [r.count] };
                             }),
                             series: [{ key: 'count', label: 'CVEs', color: INFO }],
-                            stacked: true, height: 140, minBarW: 14, gap: 3,
-                            aria: 'Columns: number of CVEs per EPSS score bucket.',
+                            stacked: true, log: true, height: 140, minBarW: 14, gap: 3,
+                            aria: 'Columns on a logarithmic axis: number of CVEs per EPSS score bucket.',
                         });
                     },
                     table: {
@@ -1671,18 +1966,30 @@
         var sec = panel('volume', '03 · Volume', 'How much gets published',
             'The count of CVEs is a count of disclosure activity, not of insecurity. It rises when more people look, when more vendors become CNAs, and when a single researcher files a thousand records in a week.');
 
-        var months = arr(st.byMonth).filter(function (r) { return obj(r) && typeof r.ym === 'string' && isNum(r.published); });
+        var part = partialPeriod(st.snapshot);
+        var isPartMonth = function (ym) { return !!(part && ym === part.ym); };
+        var isPartYear = function (y) { return !!(part && y === part.year); };
+        var months = fillMonths(arr(st.byMonth).filter(function (r) { return obj(r) && typeof r.ym === 'string' && isNum(r.published); }),
+            function (ym) { return { ym: ym, published: 0 }; });
         if (months.length) {
+            var lastPart = isPartMonth(months[months.length - 1].ym);
             figure(sec, {
                 title: 'CVEs published per month',
-                sub: 'Every month in the corpus, oldest at the left. The chart scrolls; it opens at the recent end.',
+                sub: 'Every month in the corpus, oldest at the left; a month with nothing published is a column of zero, so one column is always one month. The chart scrolls; it opens at the recent end.',
                 scrollEnd: true,
+                note: lastPart
+                    ? 'The last column, ' + ymLabel(part.ym) + ', is a month still in progress: it counts publications ' + part.to +
+                      ' only and is drawn faded and outlined. It is not a fall in publishing.'
+                    : '',
                 build: function (w) {
                     return columns(w, {
-                        cats: months.map(function (r) { return { label: ymLabel(r.ym), title: ymLabel(r.ym), ym: r.ym, values: [r.published] }; }),
+                        cats: months.map(function (r) {
+                            var p = isPartMonth(r.ym);
+                            return { label: ymLabel(r.ym), title: ymLabel(r.ym) + (p ? ' (partial, ' + part.to + ')' : ''), ym: r.ym, partial: p, values: [r.published] };
+                        }),
                         series: [{ key: 'p', label: 'Published', color: GOLD }],
                         stacked: true, height: 150, minBarW: 5, gap: 1,
-                        xLabel: function (c) { return /-01$/.test(c.ym) ? c.ym.slice(0, 4) : null; },
+                        xLabel: function (c, i) { return (i === 0 || /-01$/.test(c.ym)) ? c.ym.slice(0, 4) : null; },
                         aria: 'Columns: CVEs published per month from ' + months[0].ym + ' to ' + months[months.length - 1].ym + '.',
                     });
                 },
@@ -1690,7 +1997,7 @@
                     summary: 'Show the numbers (' + months.length + ' months)',
                     head: ['Month', 'Published'],
                     align: ['', 'n'],
-                    rows: months.map(function (r) { return [r.ym, fmtNum(r.published)]; }),
+                    rows: months.map(function (r) { return [r.ym + (isPartMonth(r.ym) ? ' (partial, ' + part.to + ')' : ''), fmtNum(r.published)]; }),
                 },
             });
         }
@@ -1719,11 +2026,21 @@
                 caveatLead: 'Two series, never one.',
                 caveat: 'Rejections are not failures of the published set — a CVE is withdrawn when it turns out to be a duplicate or not a vulnerability. Adding the two bars together would count records that no longer exist.',
                 legend: [{ color: GOLD, label: 'Published' }, { color: '#7c3aed', label: 'Rejected' }],
-                note: rejNote,
+                scrollEnd: true,
+                // Published is measured on this snapshot; the rejected baseline
+                // is not (§11 `provenanceFrom`), and the stamp says both.
+                stampNote: carriedFrom(st) ? 'rejected: baseline measured ' + ymd(carriedFrom(st)) + ', plus rejections seen since' : '',
+                note: [isPartYear(years[years.length - 1].year)
+                    ? 'The last pair, ' + part.year + ', is a year still in progress (' + part.to + ') and is drawn faded and outlined.'
+                    : '', rejNote].filter(Boolean).join(' '),
                 build: function (w) {
                     return columns(w, {
                         cats: years.map(function (r) {
-                            return { label: String(r.year), title: String(r.year), values: [isNum(r.published) ? r.published : 0, isNum(r.rejected) ? r.rejected : 0] };
+                            var p = isPartYear(r.year);
+                            return {
+                                label: String(r.year), title: String(r.year) + (p ? ' (partial, ' + part.to + ')' : ''), partial: p,
+                                values: [isNum(r.published) ? r.published : 0, isNum(r.rejected) ? r.rejected : 0],
+                            };
                         }),
                         series: [{ key: 'p', label: 'Published', color: GOLD }, { key: 'r', label: 'Rejected', color: '#7c3aed' }],
                         stacked: false, height: 150, minBarW: 10, gap: 3,
@@ -1734,7 +2051,7 @@
                 table: {
                     head: ['Year', 'Published', 'Rejected'],
                     align: ['', 'n', 'n'],
-                    rows: years.map(function (r) { return [r.year, fmtNum(r.published), isNum(r.rejected) ? fmtNum(r.rejected) : 'not published']; }),
+                    rows: years.map(function (r) { return [r.year + (isPartYear(r.year) ? ' (partial, ' + part.to + ')' : ''), fmtNum(r.published), isNum(r.rejected) ? fmtNum(r.rejected) : 'not published']; }),
                 },
             });
         }
@@ -1744,86 +2061,127 @@
 
     function panelSeverity(st) {
         var sec = panel('severity', '04 · Severity', 'The distribution, and what "none" means',
-            'Two things that look alike and are not: a record with no CVSS at all, and a record scored at the bottom of the scale. They are counted separately here and are never added together.');
+            'Two things that look alike and are not: a record with no CVSS score at all, and a record scored 0.0 — CVSS\'s own "None" band. They are counted separately here and are never added together.');
 
         var sev = obj(st.severity);
         var q = obj(st.quality) || {};
 
         if (sev) {
-            var totalSev = SEV_ORDER.reduce(function (a, k) { return a + (isNum(sev[k]) ? sev[k] : 0); }, 0);
+            var totalSev = sevSum(sev);
+            var published = SEV_ORDER.filter(function (k) { return isNum(sev[k]); }).length;
             var rows = SEV_ORDER.map(function (k) {
                 var v = isNum(sev[k]) ? sev[k] : null;
                 return {
-                    label: SEV_LABEL[k] || k,
+                    label: sevLabel(k),
+                    sub: (v == null && k === 'NONE' && !sevSplit) ? 'not published by this snapshot — counted in the next row' : null,
                     bars: [{
                         value: v == null ? 0 : v, missing: v == null, color: SEV_COLOR[k],
                         value_text: fmtNum(v), tipText: fmtNum(v) + ' (' + fmtPct(share(v, totalSev), 2) + ' of the corpus)',
                     }],
                 };
             });
-            if (isNum(q.noCvss)) {
+            /* `quality.noCvss` counts records with no CVSS metric of any
+               version. In a split snapshot it equals `none` by definition and a
+               second row would print one number twice; in an older one it is
+               the only clean "no score" count, so it is shown beside the bands
+               — never inside them, never summed with them. */
+            var showNoCvss = isNum(q.noCvss) && !(sevSplit && q.noCvss === sev.none);
+            if (showNoCvss) {
                 rows.push({
                     label: 'No CVSS at all',
                     sub: 'quality.noCvss — beside the bands, never inside them',
                     bars: [{ value: q.noCvss, color: '#475569', value_text: fmtNum(q.noCvss), tipText: fmtNum(q.noCvss) + ' records carry no CVSS metric of any version' }],
                 });
             }
+            var zeroInNone = (!sevSplit && isNum(q.noCvss) && isNum(sev.none) && sev.none >= q.noCvss) ? sev.none - q.noCvss : null;
 
             figure(sec, {
                 title: 'Severity distribution',
-                sub: 'Counts across the whole corpus, ' + fmtNum(totalSev) + ' records in the five published bands.',
+                sub: 'Counts across the whole corpus, ' + fmtNum(totalSev) + ' records in the ' + published + ' bands this snapshot publishes.',
                 caveatLead: 'Missing is not zero.',
-                caveat: '"None / unrated" is the severity band a record was published with; "No CVSS at all" counts records carrying no CVSS metric of any version. Where the two differ, the difference is records that do carry a vector — a score of 0.0 is a measurement, an absent score is not. This page never merges the two columns and never sums them.',
+                caveat: sevSplit
+                    ? '"CVSS 0.0 (None)" is a record that was scored and came out at the bottom of the scale — a measurement. "No CVSS score" is a record nobody has scored. This page never merges the two and never treats either as the other.'
+                    : SPLIT_PENDING + ' "No CVSS at all" (quality.noCvss) is the clean count of unscored records' +
+                      (zeroInNone != null ? ', so the difference — ' + fmtNum(zeroInNone) + ' — is the 0.0 scores folded into the band above it.' : '.') +
+                      ' The two rows overlap and are never summed.',
+                note: sumNote(totalSev, st.records, 'the snapshot\'s record count'),
                 build: function (w) {
-                    return hbars(w, { rows: rows, barH: 13, rowPad: 15, aria: 'Horizontal bars: record counts per severity band, with records carrying no CVSS shown as a separate row.' });
+                    return hbars(w, { rows: rows, barH: 13, rowPad: 15, aria: 'Horizontal bars: record counts per severity band, with CVSS 0.0 and no score as separate rows.' });
                 },
                 table: {
                     head: ['Band', 'Records', 'Share of corpus'],
                     align: ['', 'n', 'n'],
                     rows: SEV_ORDER.map(function (k) {
-                        return [SEV_LABEL[k] || k, isNum(sev[k]) ? fmtNum(sev[k]) : 'not published', fmtPct(share(sev[k], totalSev), 2)];
-                    }).concat(isNum(q.noCvss) ? [['No CVSS at all (quality.noCvss)', fmtNum(q.noCvss), fmtPct(share(q.noCvss, st.records), 2)]] : []),
+                        return [sevLabel(k), isNum(sev[k]) ? fmtNum(sev[k]) : 'not published by this snapshot', isNum(sev[k]) ? fmtPct(share(sev[k], totalSev), 2) : '—'];
+                    }).concat([['All bands', fmtNum(totalSev), fmtPct(share(totalSev, totalSev), 2)]])
+                      .concat(showNoCvss ? [['No CVSS at all (quality.noCvss, not a band)', fmtNum(q.noCvss), fmtPct(share(q.noCvss, st.records), 2)]] : []),
                 },
             });
         }
 
         var byYear = arr(st.severityByYear).filter(function (r) { return obj(r) && isInt(r.year); });
         if (byYear.length) {
+            // A band no year publishes is left out of the chart and table
+            // rather than drawn as a column of zeros.
+            var yKeys = SEV_ORDER.filter(function (k) { return byYear.some(function (r) { return isNum(r[k]); }); });
+            var yTotals = byYear.map(function (r) { return sevSum(r); });
+            var ySum = yTotals.reduce(function (a, v) { return a + v; }, 0);
+            var pubOf = {};
+            arr(st.byYear).forEach(function (r) { if (obj(r) && isInt(r.year) && isNum(r.published)) pubOf[r.year] = r.published; });
+            var offYears = byYear.filter(function (r, i) { return isNum(pubOf[r.year]) && pubOf[r.year] !== yTotals[i]; }).map(function (r) { return r.year; });
             figure(sec, {
                 title: 'Severity mix by year',
-                sub: 'Each column is one year normalised to 100%, so the shape is the mix rather than the volume. Grey is the unrated share — in the newest years it is largely the backlog from panel 01.',
-                legend: SEV_ORDER.map(function (k) { return { color: SEV_COLOR[k], label: SEV_LABEL[k] }; }),
+                sub: 'Each column is one year normalised to 100%, so the shape is the mix rather than the volume. Grey is the unscored share — in the newest years it is largely the backlog from panel 01.',
+                scrollEnd: true,
+                legend: yKeys.map(function (k) { return { color: SEV_COLOR[k], label: sevLabel(k) }; }),
+                note: [
+                    sumNote(ySum, st.records, 'the snapshot\'s record count') +
+                        (offYears.length ? ' Years whose bands do not match their published count: ' + offYears.join(', ') + '.' : ''),
+                    yKeys.indexOf('NONE') < 0 ? 'CVSS 0.0 is not split out by year in this snapshot; it is inside "No CVSS score (incl. 0.0)" and arrives as its own band with the next publish.' : '',
+                ].filter(Boolean).join(' '),
                 build: function (w) {
                     return columns(w, {
                         cats: byYear.map(function (r) {
                             return {
                                 label: String(r.year), title: String(r.year),
-                                values: SEV_ORDER.map(function (k) { return isNum(r[k]) ? r[k] : 0; }),
+                                values: yKeys.map(function (k) { return isNum(r[k]) ? r[k] : 0; }),
                             };
                         }),
-                        series: SEV_ORDER.map(function (k) { return { key: k, label: SEV_LABEL[k], color: SEV_COLOR[k] }; }),
+                        series: yKeys.map(function (k) { return { key: k, label: sevLabel(k), color: SEV_COLOR[k] }; }),
                         stacked: true, pct: true, height: 170, minBarW: 10, gap: 3,
                         xLabel: function (c, i) { return (byYear.length <= 14 || i % 2 === 0) ? c.label : null; },
                         aria: 'Stacked columns normalised to 100 percent: the severity mix of each year.',
                     });
                 },
                 table: {
-                    head: ['Year'].concat(SEV_ORDER.map(function (k) { return SEV_LABEL[k]; })).concat(['Total']),
-                    align: ['', 'n', 'n', 'n', 'n', 'n', 'n'],
-                    rows: byYear.map(function (r) {
-                        var t = SEV_ORDER.reduce(function (a, k) { return a + (isNum(r[k]) ? r[k] : 0); }, 0);
-                        return [r.year].concat(SEV_ORDER.map(function (k) { return isNum(r[k]) ? fmtNum(r[k]) : 'n/p'; })).concat([fmtNum(t)]);
-                    }),
+                    head: ['Year'].concat(yKeys.map(function (k) { return sevLabel(k); })).concat(['Total']),
+                    align: [''].concat(yKeys.map(function () { return 'n'; })).concat(['n']),
+                    rows: byYear.map(function (r, i) {
+                        return [r.year].concat(yKeys.map(function (k) { return isNum(r[k]) ? fmtNum(r[k]) : 'n/p'; })).concat([fmtNum(yTotals[i])]);
+                    }).concat([['All years'].concat(yKeys.map(function (k) {
+                        return fmtNum(byYear.reduce(function (a, r) { return a + (isNum(r[k]) ? r[k] : 0); }, 0));
+                    })).concat([fmtNum(ySum)])]),
                 },
             });
         }
 
-        var drift = arr(st.cvssDrift).filter(function (r) { return obj(r) && isInt(r.year) && isNum(r.mean); });
+        var drift = arr(st.cvssDrift).filter(function (r) { return obj(r) && isInt(r.year) && isNum(r.mean); })
+            .sort(function (a, b) { return a.year - b.year; });
         if (drift.length) {
+            /* The publisher writes a year only when some record of it carries
+               both scores, so the list can skip years. Spaced evenly as they
+               come, 1999 → 2001 would look like one step; the gaps are put back
+               as empty points (the line breaks there) so one step is one year. */
+            var driftYears = [];
+            var driftHas = {};
+            drift.forEach(function (r) { driftHas[r.year] = r; });
+            for (var dy = drift[0].year; dy <= drift[drift.length - 1].year; dy++) {
+                driftYears.push(driftHas[dy] || { year: dy, mean: null, n: 0, gap: true });
+            }
             var nline = el('div', 'nline');
             nline.appendChild(el('b', null, 'n by year: '));
-            nline.appendChild(document.createTextNode(drift.map(function (r) {
-                return r.year + ' ' + (isNum(r.n) ? fmtNum(r.n) : 'not published');
+            nline.appendChild(document.createTextNode(driftYears.map(function (r) {
+                return r.year + ' ' + (r.gap ? '0' : isNum(r.n) ? fmtNum(r.n) : 'not published');
             }).join(' · ')));
 
             // Like the CNA table, this is measured during a full pull and
@@ -1847,12 +2205,13 @@
                 title: 'Where NVD and the CNA disagree about severity',
                 sub: 'NVD\'s base score minus the CNA\'s, averaged over the records of each year that carry both. Above the line NVD scores it higher; below the line the CNA does; on the line the two agree on average.' +
                     (driftFrom ? ' Measured on the snapshot of ' + ymd(driftFrom) + ', the last full rebuild, and carried forward unchanged since.' : ''),
+                scrollEnd: true,
                 measuredAt: driftFrom,
                 caveatLead: 'A difference, not a level.',
                 caveat: 'This is not the average severity of a CVE — it is the average gap between two opinions of the same CVE, so zero means agreement and not "no risk". Only records carrying both an NVD and a CNA score are in it, and the two are never compared across CVSS versions. The n under the chart is that population, which is far smaller than the year.',
                 build: function (w) {
                     return linechart(w, {
-                        pts: drift.map(function (r) { return { label: String(r.year), y: r.mean, n: isNum(r.n) ? r.n : null }; }),
+                        pts: driftYears.map(function (r) { return { label: String(r.year), y: r.gap ? null : r.mean, n: isNum(r.n) && !r.gap ? r.n : null }; }),
                         min: -driftBound, max: driftBound, height: 140, minStep: 26, color: GOLD,
                         fmtTick: function (v) { return sign(v); },
                         fmtValue: function (v) { return sign(v) + ' points'; },
@@ -1863,7 +2222,10 @@
                 table: {
                     head: ['Year', 'Mean NVD − CNA', 'n (records scored by both)'],
                     align: ['', 'n', 'n'],
-                    rows: drift.map(function (r) { return [r.year, sign(r.mean), isNum(r.n) ? fmtNum(r.n) : 'not published']; }),
+                    rows: driftYears.map(function (r) {
+                        return r.gap ? [r.year, 'no record scored by both', '0']
+                            : [r.year, sign(r.mean), isNum(r.n) ? fmtNum(r.n) : 'not published'];
+                    }),
                 },
             });
         }
@@ -1957,7 +2319,9 @@
             caveatLead: 'An empty cell is unknown, not zero.',
             caveat: 'stats.json publishes only a top list per year, so a weakness outside that year\'s list has no published count. Those cells are drawn hollow. Reading them as zero would invent a fall that was never measured.',
             legend: [{ color: GOLD, label: 'rank 1 in that year' }, { color: 'rgba(234,179,8,0.25)', label: 'lower share' }, { hollow: true, label: 'not in that year\'s published top list' }],
-            scrollEnd: false,
+            // Opens at the newest years — the ones the question is about — with
+            // the weakness ids pinned at the left so the rows stay named.
+            scrollEnd: true,
             build: function (w) {
                 var labelW = 74;
                 var cellH = 20, gap = 2;
@@ -1967,6 +2331,8 @@
                 var W = Math.max(w, labelW + index.length * (cellW + gap));
                 var H = 18 + ids.length * (cellH + gap) + 4;
                 var root = svgRoot(W, H, 'Heat map: rank of each top weakness within each year.');
+                var pin = { w: labelW, h: H, items: [] };
+                root.__pin = pin;
 
                 index.forEach(function (y, c) {
                     var x = labelW + c * (cellW + gap);
@@ -1975,6 +2341,7 @@
                 ids.forEach(function (id, r) {
                     var yTop = 18 + r * (cellH + gap);
                     root.appendChild(sText(0, yTop + cellH - 6, id, 'rl', 'start'));
+                    pin.items.push({ x: 0, y: yTop + cellH - 6, text: id, cls: 'rl', anchor: 'start' });
                     index.forEach(function (y, c) {
                         var x = labelW + c * (cellW + gap);
                         var hit = y.map[id];
@@ -2089,7 +2456,21 @@
         var wrap = el('div', 'tblwrap');
         var table = el('table', 'tbl');
         wrap.appendChild(table);
+        // On a phone the five columns overflow, and a table cut off at the
+        // right edge reads as a table with two columns. Said in words, and
+        // shaded at the edge while there is more to scroll to.
+        // The hint goes above the table, where it is read before the cut-off
+        // edge is — not under twenty rows of it.
+        var scrollHint = el('div', 'nline hint');
+        fig.appendChild(scrollHint);
         fig.appendChild(wrap);
+        var updHint = function () {
+            var more = wrap.scrollWidth > wrap.clientWidth + 4;
+            scrollHint.textContent = more ? 'Wider than this screen — swipe the table sideways for coverage and description length.' : '';
+            wrap.classList.toggle('more', more && wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 4);
+        };
+        wrap.addEventListener('scroll', updHint, { passive: true });
+        window.addEventListener('resize', updHint);
         fig.appendChild(stamp(carried));
         sec.appendChild(fig);
 
@@ -2134,7 +2515,15 @@
             var tbody = el('tbody');
             sorted.slice(0, limit).forEach(function (r) {
                 var row = el('tr');
-                var tdName = el('td', null, r.source);
+                // NVD names some sources only by a UUID. Where the publisher
+                // resolves one to a name it is shown, with the UUID kept in
+                // the tooltip; where it does not, the UUID is all there is.
+                var named = typeof r.name === 'string' && r.name.trim() ? r.name.trim() : '';
+                var tdName = el('td', null, named || r.source);
+                if (named) tdName.title = r.source;
+                else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.source)) {
+                    tdName.title = 'An NVD sourceIdentifier with no published name in this snapshot.';
+                }
                 tdName.style.whiteSpace = 'normal';
                 row.appendChild(tdName);
                 row.appendChild(el('td', 'n', fmtNum(r.count)));
@@ -2147,6 +2536,7 @@
             });
             table.appendChild(tbody);
             showAll.textContent = limit >= cna.length ? 'Show top 20' : 'Show all ' + cna.length;
+            updHint();
         }
 
         function pctCell(v) {
@@ -2216,8 +2606,8 @@
             figure(sec, {
                 title: 'By day of month',
                 sub: 'The Tuesday-shaped bumps are patch cycles landing on a calendar that does not care what day of the week it is.',
-                caveatLead: 'The last three columns are not comparable.',
-                caveat: 'The 31st occurs in 7 months of the year, the 30th in 11, the 29th in 12 minus most Februaries. Their columns are lower because those days exist less often, not because less is published on them. This page draws the raw counts and says so rather than applying a correction it cannot show its working for.',
+                caveatLead: 'Raw counts: the last three columns are not comparable.',
+                caveat: 'The 31st occurs in 7 months of the year, the 30th in 11, the 29th in 12 minus most Februaries, so their raw columns start from fewer chances. How much fewer depends on which months were busy, so the next chart divides each day by what it would get if every month\'s publications were spread evenly over that month\'s days — computed from the monthly counts in this same file, with the working in its table.',
                 build: function (w) {
                     return columns(w, {
                         cats: dom.map(function (v, i) { return { label: String(i + 1), title: 'Day ' + (i + 1), values: [v] }; }),
@@ -2234,6 +2624,55 @@
                     rows: dom.map(function (v, i) { return [i + 1, fmtNum(v)]; }),
                 },
             });
+
+            /* Expected count for day d = Σ over months that have a day d of
+               (published that month ÷ days in that month). The snapshot month
+               counts only the days it has reached. Pure arithmetic on byMonth,
+               which counts the same dated records as dom — the sums are printed
+               so a reader can check that they do. */
+            var part = partialPeriod(st.snapshot);
+            var bm = arr(st.byMonth).filter(function (m) { return obj(m) && /^\d{4}-\d{2}$/.test(m.ym) && isNum(m.published); });
+            var expected = [];
+            for (var di = 0; di < 31; di++) expected.push(0);
+            bm.forEach(function (m) {
+                var yy = parseInt(m.ym.slice(0, 4), 10), mm = parseInt(m.ym.slice(5, 7), 10);
+                var days = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+                if (part && m.ym === part.ym) days = Math.min(days, Math.max(1, part.day));
+                for (var dd = 0; dd < days; dd++) expected[dd] += m.published / days;
+            });
+            var domSum = dom.reduce(function (a, b) { return a + b; }, 0);
+            var bmSum = bm.reduce(function (a, m) { return a + m.published; }, 0);
+            var ratio = dom.map(function (v, i) { return expected[i] > 0 ? v / expected[i] : null; });
+            if (bm.length && ratio.every(function (v) { return v != null; })) {
+                figure(sec, {
+                    title: 'By day of month, against what the calendar predicts',
+                    sub: 'Each day\'s count divided by its expected count. 1× is the line a day would sit on if publishing were spread evenly through every month; above it, that day gets more than its share.',
+                    caveatLead: 'Arithmetic, shown.',
+                    caveat: 'Expected for a day = the sum, over every month that has that day, of the month\'s published count divided by its number of days' +
+                        (part ? ' (' + ymLabel(part.ym) + ' counts only the ' + part.day + ' day(s) up to the snapshot)' : '') +
+                        '. The monthly counts sum to ' + fmtNum(bmSum) + ' and the day-of-month counts to ' + fmtNum(domSum) +
+                        (bmSum === domSum ? ' — the same records.' : ' — not the same total, so read the ratios as approximate.'),
+                    build: function (w) {
+                        return columns(w, {
+                            cats: ratio.map(function (v, i) { return { label: String(i + 1), title: 'Day ' + (i + 1), values: [v] }; }),
+                            series: [{ key: 'r', label: 'Observed ÷ expected', color: GOLD }],
+                            stacked: true, height: 140, minBarW: 5, gap: 2, max: Math.max(2, Math.max.apply(null, ratio)),
+                            fmt: function (v) { return v.toFixed(2) + '×'; },
+                            fmtTick: function (v) { return v.toFixed(1) + '×'; },
+                            xLabel: function (c, i) { return (i + 1) % 5 === 0 || i === 0 ? c.label : null; },
+                            aria: 'Columns: CVEs published on each day of the month divided by the count expected from monthly volumes; 1 means as expected.',
+                        });
+                    },
+                    table: {
+                        summary: 'Show the working (31 days)',
+                        head: ['Day of month', 'CVEs', 'Expected', 'Observed ÷ expected'],
+                        align: ['', 'n', 'n', 'n'],
+                        rows: dom.map(function (v, i) {
+                            return [i + 1, fmtNum(v), fmtNum(Math.round(expected[i])), ratio[i].toFixed(2) + '×'];
+                        }),
+                    },
+                });
+            }
         }
     }
 
@@ -2262,6 +2701,29 @@
                 '. Both numbers are printed where they are used.', false, 'The two files disagree on the record count.');
         }
 
+        // Before any severity figure: whether CVSS 0.0 has its own key.
+        sevSplit = !!(obj(st.severity) && isNum(st.severity.NONE));
+
+        /* `provenanceFrom` dates three figures a delta run cannot re-measure
+           (§11). A few days' carry is normal between monthly full rebuilds;
+           past STALE_PROV_DAYS a full rebuild has been missed, and the reader
+           is told which figures are old before reaching any of them. */
+        var provFrom = carriedFrom(st);
+        var provD = parseDate(provFrom), snapD = parseDate(st.snapshot);
+        if (provD && snapD) {
+            var provAge = Math.floor((snapD.getTime() - provD.getTime()) / 86400000);
+            if (provAge > STALE_PROV_DAYS) {
+                var pb = banner('', false, 'Three figures here date from ' + ymd(provFrom) + ', ' + provAge + ' days before this snapshot.');
+                pb.appendChild(document.createTextNode(
+                    'The CNA data-quality table (panel 06), the NVD-versus-CNA CVSS drift (panel 04) and the per-year rejected counts (panel 03) ' +
+                    'can only be measured by a full rebuild of the corpus, which is meant to run monthly. It has not completed since ' + ymd(provFrom) + ', ' +
+                    'so every daily build since has carried those figures forward from that date — the rejected counts with only the rejections seen since added on. ' +
+                    'Until a full rebuild recounts them, the rejected counts may be off in both directions: daily builds before 2026-10-11 counted some rejections twice, ' +
+                    'and a record published and rejected between two daily builds is never seen at all. ' +
+                    'Each of them carries that date in its stamp. Everything else on this page is measured on the snapshot of ' + ymd(st.snapshot) + '.'));
+            }
+        }
+
         panelBacklog(st);
         panelKev(st);
         panelVolume(st);
@@ -2288,6 +2750,8 @@
             app.base = (saved || DEFAULT_MIRROR).replace(/\/+$/, '');
             paintProvenance();
             return load();
+        }).then(function (st) {
+            return checkManifestHash().then(function () { return st; });
         }).then(function (st) {
             paintProvenance();
             renderAll(st);

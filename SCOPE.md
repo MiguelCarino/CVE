@@ -356,3 +356,143 @@ Effort, on top of §7's ~4 weeks:
 
 **Order:** self-host packaging first (2 days, and it is what turns a page into infrastructure), then
 `stats.json` and the observatory (the funnel), then the watchlist report (the billable artefact).
+
+---
+
+# Part III — the Ticker view (10 October 2026)
+
+The observatory (§12) answers *what does the corpus look like*. The owner's next question is *which way
+is it moving* — the same question a markets panel answers, and the fleet already owns one. This part
+scopes a **stocks-like panel for CVE tendencies**, built from the corpus and the Stocks codebase.
+
+**Where it lives:** inside the CVE site, as a view beside `stats.html` (`ticker.html`, same chrome,
+same mirror). **No new subdomain** — the fleet merge rule (a tool is consolidated, never split into a
+sub-hub) applies, and a second site would only duplicate the manifest, the hash discipline and the
+integrity rules.
+
+## 17. What it borrows from Stocks — by copying, not importing
+
+No build and no shared package: files are copied into `CVE/js/` with a header naming their origin, the
+way the fleet already vendors code.
+
+| From `~/Github/Stocks` | What it gives us | Note |
+|---|---|---|
+| `js/indicators.js` (694 lines) | `sma`, `ema`, `stdev`, `bollinger`, `relativeStrength`, `returns`, `maxDrawdown` | **Pure — no imports, no DOM, no clock.** Output arrays are aligned to the input with `null` in warm-up and wherever an input is missing, which is exactly §14's *missing is never zero*. Copy `tests/indicators.test.mjs` with it. |
+| `js/viz.js` (91 lines) | `sparkline()` — inline-SVG micro line+area; `hexA()`/`toRGB()` theme helpers | Already drops null/NaN holes. Matches `stats.html`'s inline-SVG, no-library rule. |
+| `js/chart.js` (1,770 lines) | `createChart()` — canvas engine, panes, crosshair, log/percent scale | **P2 only, and only for the drill-down.** It imports `format.js`, `session.js` (market hours) and `viz.js`; CVE days are continuous, so `session.js` is replaced by a stub. If that stub grows past a page, inline SVG wins instead. **[E]** |
+| `.stat-tile`, `.delta.up/.down/.flat`, `.spark` | KPI tile, signed change chip, micro-chart | Canonical copies are in Branding's **Data Viz** section (`branding.carino.systems#dataviz`); take the CSS from there, not from Stocks. |
+
+**What is deliberately not copied:** candles (a CVE count has no open/high/low), RSI/MACD/stochastics
+(oscillators tuned to traded prices, meaningless on publication counts), drawings, the screener, and
+anything that sounds like a buy or sell signal.
+
+## 18. The mapping — what each market idea means here
+
+| Markets idea | CVE meaning | Source |
+|---|---|---|
+| **Index** | Total CVE volume — new CVEs per day/week/month | `byMonth` + `ticks.json` |
+| **Tickers** | CWEs, severity levels, KEV, and the user's **watchlist terms** | ticks / corpus |
+| **Volume** | New CVEs per period for that ticker | ticks |
+| **Relative strength** | A CWE's **share** of all CVEs, not its count. Raw counts rise with the total, so every CWE "rallies" in a growing corpus; share is the only honest trend line | `relativeStrength()` |
+| **SMA 7 / 30 crossover** | A **sustained rise** — the 7-period average holding above the 30 | `sma()` |
+| **Bollinger band / z-score** | **Unusual volume** — a period outside ±2σ, annotated with the known calendar cause where there is one (Patch Tuesday, Oracle's quarterly CPU) from the `rhythm` data | `bollinger()`, `stdev()` |
+| **Per-CVE "price"** | The CVE's **EPSS daily score** | EPSS window (§19) |
+| **Earnings shock** | The day a CVE is added to **KEV** | KEV `dateAdded` |
+| **Rating change** | An NVD **re-score** (CVSS base score changed) | deltas |
+| **Delisting** | **Rejection** | deltas |
+| **Movers board** | New KEV adds · top EPSS gainers · re-scores, since the last sync | ticks + window |
+| **Heatmap** | CWE × month, coloured by **change in share** (never raw count) | ticks / corpus |
+| **Price alerts** | Watchlist alerts that **fire on sync** — the browser cannot push (§13 #3); push stays a shape 3/4 job | client |
+
+> **The rule that makes the mapping honest: everything is a share, a rate or a dated event — never a
+> raw count presented as a trend.** A growing corpus makes every raw count go up and to the right.
+
+## 19. Decisions, 2026-10-10
+
+1. **[D] Per-CVE EPSS history — publisher-hosted rolling window, client accumulates the rest.** The
+   publisher keeps a window of daily EPSS scores for **every KEV CVE plus every CVE above an EPSS
+   threshold**, backfillable from FIRST's dated daily files (`epss_scores-YYYY-MM-DD.csv.gz`). Anything
+   outside the window the client records itself, one point per sync, from the day the user starts
+   watching it — and labels it *"history since you started watching"*.
+   **[E] proposal:** window **90 days**, threshold **EPSS ≥ 0.1**, sticky (a CVE that crossed the
+   threshold stays in for the rest of the window). Size: ~1.7 k KEV + roughly 10–15 k above threshold
+   ≈ **~15 k CVEs × 90 days**; scores quantised to 1e-4 (a `uint16`) and stored as change points
+   compress to **~2–3 B/point gz** → **~3–4 MB**. A 365-day window would be **~14–16 MB** — larger than
+   the index tier itself, which is why 90 is the proposal.
+2. **[D] Weekly snapshots archived to GitHub Releases.** One full snapshot per week as a release asset,
+   **~42 MB each, ~2.2 GB/year**. This turns the **state** metrics — backlog size, status mix,
+   enrichment lag — from *attested* (we recorded it on the day; trust us) into **recomputable** (anyone
+   can download the week's snapshot and get the same number). It is §13 #8 extended backwards in time,
+   and it closes the hosting question §4 and §9.2 left open: the live tree stays on `gh-pages`, the
+   archive goes to Releases, never into git history.
+3. **[D] Vendor/product tickers are watchlist-only.** A user may chart *their own* vendors; no vendor
+   or product ever appears on a public board, movers list, heatmap or leaderboard. This is §14's first
+   rule applied to a format that would otherwise invite exactly the "most insecure vendor" chart.
+4. **[D] P0 done.** GitHub Pages for `CVE-data` now serves the `gh-pages` branch at
+   `cve-data.carino.systems` (certificate approved, `access-control-allow-origin: *`);
+   `manifest.json` and `stats.json.gz` return 200, and `stats.html` is being verified in a real browser
+   for the first time — until today no chart had ever been drawn from published data.
+
+## 20. A fifth data tier — `ticks.json`
+
+`stats.json` is a picture of *today*. A ticker needs *every day*, and most of the state metrics cannot
+be reconstructed after the fact from a current snapshot (a record that was `Received` in March and is
+`Analyzed` now leaves no trace of March).
+
+| Tier | Size | Unlocks |
+|---|---|---|
+| **`ticks.json`** — one row per publisher run | **~2 KB/day gz [E]** → ~0.7 MB/year | Every time series in the Ticker view |
+| `stats.json` | ~20 KB gz (~100 KB plain) | The observatory |
+| Index / index + description / full | 5 / 34 / 95 MB | Search, offline, air-gapped |
+
+**Shape [E]:** each tick is `{date, manifestSha256, records, new, rejected, severity:{…}, status:{…},
+backlog:{unenriched,total}, kev:{count,added}, cwe:{"CWE-79":N,…top 50 + other}}`. **Every tick is
+stamped with the `manifestSha256` of the run that produced it**, so a point on a chart cites its
+snapshot exactly as §14 requires.
+
+**Append-only, and carried twice.** The publisher reads the previously published `ticks.json`, appends
+today's row and republishes it. Because `gh-pages` is an **orphan branch force-pushed on every run**, a
+single bad run that fails to read yesterday's file would silently wipe the whole history. So
+`ticks.json` is **also committed to `main`** on every run — a few KB a day of git growth, which is the
+one place committing data is the right call — and the publisher refuses to publish a `ticks.json`
+shorter than the one on `main`.
+
+## 21. Traps
+
+| Trap | What goes wrong | The guard |
+|---|---|---|
+| **The settling window** | ~A third of recent records are unenriched (§12), so CWE and severity series **sag at the right edge** — every chart shows a false recent decline | Shade the settling window on every chart, label it, and **exclude it from indicator inputs** (SMA/Bollinger never see unsettled points) |
+| **Hindsight bias in backfill** | Backfilling a series with *today's* scores, CWEs or CVSS applied to past dates makes the past look better-classified than it was | Backfill only from data dated at the time (FIRST's dated EPSS files, KEV `dateAdded`); anything else starts at its first recorded tick |
+| **Recomputable vs attested** | Mixing the two hides which numbers anyone can check | Series keyed by **publish date or KEV date** are *recomputable* — re-derived from the current snapshot every run, so they revise as records settle. **Backlog and status mix are attested** — they exist only from the first recorded tick — *until weekly snapshots are archived, which §19.2 now does*. Each chart says which kind it is |
+| **Market language** | "Bullish", "breakout", "sell-off" imply a forecast and a trade | Plain words only: *rising*, *falling*, *spike*, *unusual*, *sustained* |
+| **The composite** | The temptation to sum tickers into a "Carino index" | **No composite index.** §15's "no proprietary scoring" covers it |
+| **Forecasting** | A trend line extended past today is a prediction | **No forecasting** — nothing is drawn past the last tick |
+
+§14 and §15 carry over unchanged. The view opens, on first load, with: **"Not a risk score, not a
+vulnerability assessment."** — dismissible, and restated in the footer of every exported image.
+
+## 22. Phasing **[E]**
+
+| Phase | Scope | Effort |
+|---|---|---|
+| **P0** — done 2026-10-10 | Pages serving `gh-pages` at `cve-data.carino.systems`, CORS `*`, first browser render of `stats.html` | — |
+| **P1** — publisher | `ticks.json` (append-only, carried forward, committed to `main`) · weekly snapshot to Releases · EPSS window with backfill | **~3–4 days** |
+| **P2** — the Ticker view | `ticker.html` beside `stats.html`: index, severity/CWE/KEV tickers by share, SMA 7/30, Bollinger with calendar annotations, settling-window shading, heatmap, movers board | **~1 week** |
+| **P3** — the watchlist | Per-CVE watchlist with EPSS "price", event markers (KEV add, re-score, rejection), alerts on sync, watchlist-only vendor tickers; client accumulation for CVEs outside the window | **~1 week** |
+
+**Order:** P1 first and soon — `ticks.json` is the only part that **cannot be built later**; every day
+it does not run is a day of state history lost for good (until the snapshot archive makes it
+recomputable, which also starts in P1).
+
+## 23. Open questions
+
+1. **[V]** FIRST's EPSS API — does it send `access-control-allow-origin`, and how far back does its
+   time-series endpoint go? If both are yes, the client could fetch one CVE's history on demand and the
+   window could shrink.
+2. **[V]** CORS on GitHub Release assets for snapshot **downloads** from the browser (the §4/§9.4
+   question, still unanswered). If absent, archived snapshots are recomputable by a person with `curl`,
+   not by the page — still true to §13 #8, but say so.
+3. **[V]** Release storage over years — ~2.2 GB/year of assets has no documented per-repo cap, but
+   "undocumented" is not "unlimited". Decide a thinning rule (e.g. keep weekly for a year, monthly
+   after) before year three.
+4. **[E]** EPSS window length and threshold (§19.1) — 90 days / ≥ 0.1 is a proposal, not a decision.
