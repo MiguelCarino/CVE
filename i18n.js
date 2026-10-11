@@ -64,6 +64,7 @@ const I18N = {
         'Data: local snapshot %1': 'Datos: instantánea local %1',
         'Data: local snapshot %1 + NVD live': 'Datos: instantánea local %1 + NVD en vivo',
         'Data source': 'Origen de los datos',
+        'Observatory — the whole corpus, charted →': 'Observatorio — todo el corpus, en gráficas →',
         'complete through %1': 'completo hasta %1',
         // Results header
         'Showing %1 of %2 loaded (%3 matched)': 'Mostrando %1 de %2 cargados (%3 coincidencias)',
@@ -96,6 +97,7 @@ const I18N = {
         'Copied': 'Copiado',
         // Data-source dialog
         'Data source': 'Origen de los datos',
+        'Observatory — the whole corpus, charted →': 'Observatorio — todo el corpus, en gráficas →',
         'What is stored in this browser, where it came from and when it was taken. Nothing here is uploaded anywhere.': 'Qué hay guardado en este navegador, de dónde vino y cuándo se tomó. Nada de esto se sube a ningún sitio.',
         'Close': 'Cerrar',
         'Source in use': 'Origen en uso',
@@ -349,6 +351,7 @@ const I18N = {
         'Data: local snapshot %1': 'Dados: instantâneo local %1',
         'Data: local snapshot %1 + NVD live': 'Dados: instantâneo local %1 + NVD ao vivo',
         'Data source': 'Origem dos dados',
+        'Observatory — the whole corpus, charted →': 'Observatório — todo o corpus em gráficos →',
         'complete through %1': 'completo até %1',
         'Showing %1 of %2 loaded (%3 matched)': 'Exibindo %1 de %2 carregados (%3 correspondências)',
         'Sort By:': 'Ordenar por:',
@@ -378,6 +381,7 @@ const I18N = {
         'Copied': 'Copiado',
         // Data-source dialog
         'Data source': 'Origem dos dados',
+        'Observatory — the whole corpus, charted →': 'Observatório — todo o corpus em gráficos →',
         'What is stored in this browser, where it came from and when it was taken. Nothing here is uploaded anywhere.': 'O que está guardado neste navegador, de onde veio e quando foi capturado. Nada disso é enviado a lugar nenhum.',
         'Close': 'Fechar',
         'Source in use': 'Origem em uso',
@@ -624,6 +628,7 @@ const I18N = {
         'Data: local snapshot %1': 'データ: ローカルスナップショット %1',
         'Data: local snapshot %1 + NVD live': 'データ: ローカルスナップショット %1 ＋ NVDライブ',
         'Data source': 'データの出所',
+        'Observatory — the whole corpus, charted →': '観測所 — コーパス全体をグラフで →',
         'complete through %1': '%1まで完全',
         'Showing %1 of %2 loaded (%3 matched)': '取得%2件中%1件を表示（該当%3件）',
         'Sort By:': '並び替え:',
@@ -653,6 +658,7 @@ const I18N = {
         'Copied': 'コピーしました',
         // Data-source dialog
         'Data source': 'データの出所',
+        'Observatory — the whole corpus, charted →': '観測所 — コーパス全体をグラフで →',
         'What is stored in this browser, where it came from and when it was taken. Nothing here is uploaded anywhere.': 'このブラウザに何が保存され、どこから来て、いつ取得されたか。ここにあるものはどこにも送信されません。',
         'Close': '閉じる',
         'Source in use': '使用中の出所',
@@ -900,6 +906,7 @@ const I18N = {
         'Data: local snapshot %1': 'Данные: локальный снимок %1',
         'Data: local snapshot %1 + NVD live': 'Данные: локальный снимок %1 + NVD в реальном времени',
         'Data source': 'Источник данных',
+        'Observatory — the whole corpus, charted →': 'Обсерватория — весь корпус в графиках →',
         'complete through %1': 'полные данные по %1',
         'Showing %1 of %2 loaded (%3 matched)': 'Показано %1 из %2 загруженных (найдено %3)',
         'Sort By:': 'Сортировка:',
@@ -929,6 +936,7 @@ const I18N = {
         'Copied': 'Скопировано',
         // Data-source dialog
         'Data source': 'Источник данных',
+        'Observatory — the whole corpus, charted →': 'Обсерватория — весь корпус в графиках →',
         'What is stored in this browser, where it came from and when it was taken. Nothing here is uploaded anywhere.': 'Что хранится в этом браузере, откуда оно взялось и когда было снято. Ничего из этого никуда не отправляется.',
         'Close': 'Закрыть',
         'Source in use': 'Используемый источник',

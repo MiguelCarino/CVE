@@ -422,7 +422,10 @@ anything that sounds like a buy or sell signal.
 2. **[D] Weekly snapshots archived to GitHub Releases.** One full snapshot per week as a release asset,
    **~42 MB each, ~2.2 GB/year**. This turns the **state** metrics — backlog size, status mix,
    enrichment lag — from *attested* (we recorded it on the day; trust us) into **recomputable** (anyone
-   can download the week's snapshot and get the same number). It is §13 #8 extended backwards in time,
+   can download the week's snapshot and get the same number). Not every tick field: `rejected` (rejected
+   records leave the corpus), `net`, KEV `added`/`removed` and the EPSS file date compare against an
+   earlier run rather than a snapshot, so they stay attested even for an archived week — `ticks.json`
+   names them in `notes.attestedOnly` (CVE-data `CONTRACT.md` §13). It is §13 #8 extended backwards in time,
    and it closes the hosting question §4 and §9.2 left open: the live tree stays on `gh-pages`, the
    archive goes to Releases, never into git history.
 3. **[D] Vendor/product tickers are watchlist-only.** A user may chart *their own* vendors; no vendor
@@ -461,9 +464,9 @@ shorter than the one on `main`.
 
 | Trap | What goes wrong | The guard |
 |---|---|---|
-| **The settling window** | ~A third of recent records are unenriched (§12), so CWE and severity series **sag at the right edge** — every chart shows a false recent decline | Shade the settling window on every chart, label it, and **exclude it from indicator inputs** (SMA/Bollinger never see unsettled points) |
+| **The settling window** | ~A third of recent records are unenriched (§12), so CWE and severity series **sag at the right edge** — every chart shows a false recent decline | Shade the settling window on every publish-date chart, label it, and **exclude it from indicator inputs** (SMA/Bollinger never see unsettled points). KEV listings by `dateAdded` do not wait on NVD and are not shaded. The edge (`settledThrough`) is per snapshot and can move earlier |
 | **Hindsight bias in backfill** | Backfilling a series with *today's* scores, CWEs or CVSS applied to past dates makes the past look better-classified than it was | Backfill only from data dated at the time (FIRST's dated EPSS files, KEV `dateAdded`); anything else starts at its first recorded tick |
-| **Recomputable vs attested** | Mixing the two hides which numbers anyone can check | Series keyed by **publish date or KEV date** are *recomputable* — re-derived from the current snapshot every run, so they revise as records settle. **Backlog and status mix are attested** — they exist only from the first recorded tick — *until weekly snapshots are archived, which §19.2 now does*. Each chart says which kind it is |
+| **Recomputable vs attested** | Mixing the two hides which numbers anyone can check | Series keyed by **publish date or KEV date** are *recomputable* — re-derived from the current snapshot every run, so they revise as records settle. **Backlog and status mix are attested** — they exist only from the first recorded tick — *until weekly snapshots are archived, which §19.2 now does*. **Rejections, net change and KEV adds/removals stay attested even then** (they compare two runs, not one snapshot). Each chart says which kind it is |
 | **Market language** | "Bullish", "breakout", "sell-off" imply a forecast and a trade | Plain words only: *rising*, *falling*, *spike*, *unusual*, *sustained* |
 | **The composite** | The temptation to sum tickers into a "Carino index" | **No composite index.** §15's "no proprietary scoring" covers it |
 | **Forecasting** | A trend line extended past today is a prediction | **No forecasting** — nothing is drawn past the last tick |
@@ -476,7 +479,7 @@ vulnerability assessment."** — dismissible, and restated in the footer of ever
 | Phase | Scope | Effort |
 |---|---|---|
 | **P0** — done 2026-10-10 | Pages serving `gh-pages` at `cve-data.carino.systems`, CORS `*`, first browser render of `stats.html` | — |
-| **P1** — publisher | `ticks.json` (append-only, carried forward, committed to `main`) · weekly snapshot to Releases · EPSS window with backfill | **~3–4 days** |
+| **P1** — publisher — **built 2026-10-10** | `ticks.json` (append-only, carried forward, committed to `main`) · weekly snapshot to Releases · EPSS window with backfill. In `CVE-data`: `tools/ticks.mjs`, `tools/epss-window.mjs`, `tools/archive.mjs`, `tools/ticks-guard.mjs`, wired into `publish.mjs` and `publish.yml`; formats in its `CONTRACT.md` §4 and §13–§15. Live from the first scheduled run after it lands on `main` | **~3–4 days** |
 | **P2** — the Ticker view | `ticker.html` beside `stats.html`: index, severity/CWE/KEV tickers by share, SMA 7/30, Bollinger with calendar annotations, settling-window shading, heatmap, movers board | **~1 week** |
 | **P3** — the watchlist | Per-CVE watchlist with EPSS "price", event markers (KEV add, re-score, rejection), alerts on sync, watchlist-only vendor tickers; client accumulation for CVEs outside the window | **~1 week** |
 
@@ -489,10 +492,23 @@ recomputable, which also starts in P1).
 1. **[V]** FIRST's EPSS API — does it send `access-control-allow-origin`, and how far back does its
    time-series endpoint go? If both are yes, the client could fetch one CVE's history on demand and the
    window could shrink.
+   **Resolved 2026-10-10:** `api.first.org/data/v1/epss?cve=…&scope=time-series` **does** send
+   `access-control-allow-origin: *`, but returns **only 30 days**. The publisher-hosted 90-day window
+   stays; the API is at most a client-side top-up for the last month. The dated files
+   (`epss_scores-YYYY-MM-DD.csv.gz`) go back at least to 2025-10 and are what the window is built from.
 2. **[V]** CORS on GitHub Release assets for snapshot **downloads** from the browser (the §4/§9.4
    question, still unanswered). If absent, archived snapshots are recomputable by a person with `curl`,
    not by the page — still true to §13 #8, but say so.
+   **Resolved 2026-10-10:** absent. A release-asset download answers with a 302 redirect and **no**
+   `access-control-allow-origin`, so no page can fetch one. Recompute is **curl-only**, and it is said
+   so in `CVE-data`'s README, CONTRACT §15, every release's notes, `archive.json`
+   (`browserFetchable: false`) and the `notes.archive` field of `ticks.json`.
 3. **[V]** Release storage over years — ~2.2 GB/year of assets has no documented per-repo cap, but
    "undocumented" is not "unlimited". Decide a thinning rule (e.g. keep weekly for a year, monthly
    after) before year three.
+   *Measured 2026-10-10:* one weekly tar is ~60 MB (~64 MB with the EPSS window), so **~3.3 GB/year**,
+   not 2.2 — the thinning rule matters a year sooner than estimated.
 4. **[E]** EPSS window length and threshold (§19.1) — 90 days / ≥ 0.1 is a proposal, not a decision.
+   *Measured 2026-10-10:* the real 90-day window is **213 KB gz** (18,138 CVEs, 56,643 change points),
+   about 16× under §19.1's estimate — EPSS rarely moves at 1e-4. A 365-day window would be roughly
+   0.6–1 MB **[E]**, so size no longer argues for 90.
