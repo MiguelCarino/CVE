@@ -19,9 +19,9 @@ Live at **https://cve.carino.systems**
 - **CVSS version fallback** — scores are read from CVSS v3.1 first, then v3.0, then v2. Where a record carries several metric entries, NVD's own is preferred over the CNA's, and the card says which one it is showing (`CVSS 3.1 · NVD` / `· CNA`).
 - **PENDING means no score** — a grey PENDING card means the record carries no CVSS at all (about 2% of records). A CVE that NVD has not analysed yet usually still carries the CNA's score; that score is shown, with the `vulnStatus` badge saying NVD has not finished.
 - **Export** — CSV or JSON of what is on screen. The JSON carries the query, the retrieval timestamp and both counts.
-- **Shareable views** — the whole view is in the URL hash (`#q=chrome&t=2025&s=HIGH&o=score-high`), so a shared link reproduces what the sender saw. Old links carrying a bare keyword still work.
+- **Shareable views** — the whole view is in the URL hash (`#q=chrome&t=2025&s=HIGH&o=score-high`), so a shared link reproduces what the sender saw. The mode and section ride along (`&m=trends&x=volume`), and Back walks between modes. Old links carrying a bare keyword still work.
 - **KEV and EPSS** — cards carry a **KEV** badge when CISA lists the CVE as known-exploited, and an EPSS chip with the exploitation probability. Both are filterable. Neither service can be fetched by a browser at all; see [Exploitation and probability](#exploitation-and-probability--kev-and-epss).
-- **The observatory** — [`stats.html`](stats.html) plots the whole corpus: publication volume, severity mix, the NVD enrichment backlog, time since last modification, CWE and CNA data quality, KEV overlap, EPSS distribution. It downloads a few tens of KB (stats.json.gz is ~20 KB) and no shards.
+- **Three modes: List · Trends · Projection** — the results header switches the column between the classic list (the default, unchanged), [**Trends**](index.html#m=trends) — the corpus as it moves, with interactive charts, plus the seven whole-corpus observatory panels — and [**Projection**](index.html#m=proj), four counts extended forward with their measured track record. Neither of the two loads anything until it is opened, and neither downloads a shard. See [The observatory](#the-observatory--trends-and-projection).
 - **Watchlists** — name a list of product terms once and ask *"what is new for my estate since my last sync?"* Exports to CSV, JSON and a printable HTML, each stamped with the snapshot it was computed from.
 - **Provenance** — the rail states where the data came from and when it was retrieved.
 - **Mobile drawer** — below 900px the filter rail becomes an off-canvas drawer toggled by a ☰ button injected into the shared navbar; it closes via the scrim, the Escape key, or automatically when a quick-tag or Search is tapped.
@@ -129,15 +129,43 @@ show nothing at all, not because nothing is exploited but because the page you h
 holds none of it. Against a local corpus the same filter is exact, because every record is present
 to be filtered. When the filter is on and the answer came from NVD live, the header says so.
 
-## The observatory — `stats.html`
+## The observatory — Trends and Projection
 
-[`stats.html`](stats.html) is the corpus seen whole: 381,425 records, plotted. It reads
-`manifest.json` and `stats.json.gz` — a few tens of KB together — and **never a shard**. The most interesting
-public-facing thing here is also the smallest download, so it works on a phone, on hotel wifi, and
-for someone who has no intention of storing 30 MB.
+The observatory is two modes of `index.html`, switched from the results header: **List** (the
+default, exactly the page it was), **Trends** (`index.html#m=trends`) and **Projection**
+(`index.html#m=proj`). `stats.html` survives only as a redirect, so old links — including its panel
+anchors (`stats.html#kev`) — land on the matching section. The modes read `manifest.json`,
+`stats.json.gz` and `ticks.json.gz` — a few tens of KB together — plus the KEV feed and, only when
+that section is opened, the 90-day EPSS window; **never a shard**. The most interesting public-facing
+thing here is also the smallest download, so it works on a phone, on hotel wifi, and for someone who
+has no intention of storing 30 MB. Nothing behind the two modes is fetched, or even loaded as code,
+until one of them is opened (`js/cve-modes.js` is the only eager addition).
 
-Charts are **inline SVG with no library and no CDN**, theme-aware, self-hosted fonts like the rest of
-the fleet. What it plots:
+**The hash.** `m=trends|proj` picks the mode and `x=<section>` the section — Trends: `status`,
+`pulse`, `volume`, `mix`, `cwe`, `kev`, `movers`, `backlog`, `corpus`, or `corpus-<panel>` to open one
+whole-corpus panel; Projection: `record`, `monthly`, `weekly`, `share`, `kev`, `notproj`, `method`,
+`recompute`. The list's own keys (`q`, `t`, `s`, …) are kept beside them, so a round trip through a
+mode loses no search. **`?mirror=https://…`** points both modes at another CVE-data mirror for that
+page load (it is never saved).
+
+**Trends** opens with a status strip — the snapshot's age (red past 7 days), the sha256 checks, the
+manifest hash recomputed in the page, how far publication counts have settled — and six tiles, then
+the publication volume (ranges 3M to All, day/week/month, a usual-range band), the severity and
+no-score mix, the CWE change heatmap, KEV additions, the newest KEV entries and the largest EPSS
+moves, the NVD backlog, and the seven whole-corpus panels below. Every chart has a crosshair and
+readout (pointer, touch or arrow keys), a stamp, a sample size and a table of its numbers. The days
+NVD has not finished enriching are hatched and kept out of every average, band and comparison.
+
+**Projection** extends four counts — monthly and weekly new CVEs, the Critical+High share of scored
+CVEs, monthly KEV additions — and leads with the track record: how far off each method has been one to
+three steps ahead, and how often its bands actually held. A method is drawn only if it beats "same as
+last period" by 10%; bands are empirical, never widened, and their measured coverage is printed. The
+full rules, and what is never projected, are [SCOPE §21a](SCOPE.md#21a-projection--method-proj-v1-decided-2026-10-11);
+`node tools/project.mjs --stats stats.json.gz --ticks ticks.json.gz --kev enrich/kev.json.gz` prints
+exactly the numbers the page draws.
+
+Charts are **inline SVG with no library and no CDN**, dark like the rail, self-hosted fonts like the
+rest of the fleet; every string is translated with the rest of the site. The whole-corpus panels:
 
 | Panel | |
 |---|---|
@@ -149,7 +177,7 @@ the fleet. What it plots:
 | **06 · Data quality** — *what the records themselves are missing* | Per assigner: CVSS coverage, CWE coverage, median description length. Records with no CWE, no CVSS, or a description too short to act on. Analysis lag as median and p90 days. |
 | **07 · Rhythm** — *when the work happens* | Publications by weekday and by day of month. |
 
-### Five rules every chart on that page obeys
+### Five rules every chart in those modes obeys
 
 1. **Never rank vendors or CNAs by raw CVE count as "most insecure".** A high count usually means
    more scrutiny, a working disclosure process and an assigner that publishes. The CNA panel is a
@@ -193,6 +221,21 @@ Export as **CSV**, **JSON** or a **printable HTML** page. Every one of the three
 term list, the window it covers, the snapshot date and the `manifestSha256` it was computed from, so
 whoever receives it can fetch that snapshot and recompute the same answer. That stamp is the whole
 difference between a deliverable and a screenshot.
+
+## Tests
+
+No dependencies and no build. With Node 22:
+
+```sh
+node --test js/*.test.mjs   # the pure modules, the loaders, and i18n parity across the four locales
+node tools/smoke.mjs        # headless Chromium against the fixture mirror in js/fixtures/obs/
+```
+
+`tools/smoke.mjs` serves the repository with `python3 -m http.server`, drives
+`/usr/bin/chromium-browser` over the DevTools protocol, and checks that List mode makes no dashboard
+request, that both modes draw and verify, that Back walks between modes, that nothing scrolls sideways
+at 375 px, and that old `stats.html` links land where they pointed. `--live` runs it against the real
+mirror; `--shots=DIR` keeps the screenshots.
 
 ## Documents
 

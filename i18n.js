@@ -65,6 +65,13 @@ const I18N = {
         'Data: local snapshot %1 + NVD live': 'Datos: instantánea local %1 + NVD en vivo',
         'Data source': 'Origen de los datos',
         'Observatory — the whole corpus, charted →': 'Observatorio — todo el corpus, en gráficas →',
+        // The mode switch in the results header (eager: it is on the List page).
+        'Mode': 'Modo',
+        'List': 'Lista',
+        'Trends': 'Tendencias',
+        'Projection': 'Proyección',
+        // Shown before js/i18n-obs.js has loaded, so it cannot live there.
+        'Loading charts…': 'Cargando gráficas…',
         'complete through %1': 'completo hasta %1',
         // Results header
         'Showing %1 of %2 loaded (%3 matched)': 'Mostrando %1 de %2 cargados (%3 coincidencias)',
@@ -352,6 +359,13 @@ const I18N = {
         'Data: local snapshot %1 + NVD live': 'Dados: instantâneo local %1 + NVD ao vivo',
         'Data source': 'Origem dos dados',
         'Observatory — the whole corpus, charted →': 'Observatório — todo o corpus em gráficos →',
+        // The mode switch in the results header (eager: it is on the List page).
+        'Mode': 'Modo',
+        'List': 'Lista',
+        'Trends': 'Tendências',
+        'Projection': 'Projeção',
+        // Shown before js/i18n-obs.js has loaded, so it cannot live there.
+        'Loading charts…': 'Carregando gráficos…',
         'complete through %1': 'completo até %1',
         'Showing %1 of %2 loaded (%3 matched)': 'Exibindo %1 de %2 carregados (%3 correspondências)',
         'Sort By:': 'Ordenar por:',
@@ -629,6 +643,13 @@ const I18N = {
         'Data: local snapshot %1 + NVD live': 'データ: ローカルスナップショット %1 ＋ NVDライブ',
         'Data source': 'データの出所',
         'Observatory — the whole corpus, charted →': '観測所 — コーパス全体をグラフで →',
+        // The mode switch in the results header (eager: it is on the List page).
+        'Mode': '表示モード',
+        'List': '一覧',
+        'Trends': '推移',
+        'Projection': '推計',
+        // Shown before js/i18n-obs.js has loaded, so it cannot live there.
+        'Loading charts…': 'グラフを読み込み中…',
         'complete through %1': '%1まで完全',
         'Showing %1 of %2 loaded (%3 matched)': '取得%2件中%1件を表示（該当%3件）',
         'Sort By:': '並び替え:',
@@ -907,6 +928,13 @@ const I18N = {
         'Data: local snapshot %1 + NVD live': 'Данные: локальный снимок %1 + NVD в реальном времени',
         'Data source': 'Источник данных',
         'Observatory — the whole corpus, charted →': 'Обсерватория — весь корпус в графиках →',
+        // The mode switch in the results header (eager: it is on the List page).
+        'Mode': 'Режим',
+        'List': 'Список',
+        'Trends': 'Динамика',
+        'Projection': 'Проекция',
+        // Shown before js/i18n-obs.js has loaded, so it cannot live there.
+        'Loading charts…': 'Загрузка графиков…',
         'complete through %1': 'полные данные по %1',
         'Showing %1 of %2 loaded (%3 matched)': 'Показано %1 из %2 загруженных (найдено %3)',
         'Sort By:': 'Сортировка:',

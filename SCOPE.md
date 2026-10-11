@@ -365,8 +365,10 @@ The observatory (§12) answers *what does the corpus look like*. The owner's nex
 is it moving* — the same question a markets panel answers, and the fleet already owns one. This part
 scopes a **stocks-like panel for CVE tendencies**, built from the corpus and the Stocks codebase.
 
-**Where it lives:** inside the CVE site, as a view beside `stats.html` (`ticker.html`, same chrome,
-same mirror). **No new subdomain** — the fleet merge rule (a tool is consolidated, never split into a
+**Where it lives:** inside the CVE site — **built 2026-10-11 as the Trends and Projection modes inside
+`index.html` (`#m=trends|proj`); `stats.html` redirects** there (`#m=trends&x=corpus`), so there is one
+renderer and one manifest-hash check. The list stays the default mode. Same chrome, same mirror.
+**No new subdomain** — the fleet merge rule (a tool is consolidated, never split into a
 sub-hub) applies, and a second site would only duplicate the manifest, the hash discipline and the
 integrity rules.
 
@@ -381,6 +383,12 @@ way the fleet already vendors code.
 | `js/viz.js` (91 lines) | `sparkline()` — inline-SVG micro line+area; `hexA()`/`toRGB()` theme helpers | Already drops null/NaN holes. Matches `stats.html`'s inline-SVG, no-library rule. |
 | `js/chart.js` (1,770 lines) | `createChart()` — canvas engine, panes, crosshair, log/percent scale | **P2 only, and only for the drill-down.** It imports `format.js`, `session.js` (market hours) and `viz.js`; CVE days are continuous, so `session.js` is replaced by a stub. If that stub grows past a page, inline SVG wins instead. **[E]** |
 | `.stat-tile`, `.delta.up/.down/.flat`, `.spark` | KPI tile, signed change chip, micro-chart | Canonical copies are in Branding's **Data Viz** section (`branding.carino.systems#dataviz`); take the CSS from there, not from Stocks. |
+
+**As built (2026-10-11), for the Trends and Projection modes inside index.html (`#m=trends|proj`;
+stats.html redirects):** `indicators.js` became `js/cve-indicators.js` (the functions the modes use, with
+its tests); `chart.js` was **not** copied — `js/cve-tschart.js` is inline SVG on the observatory's own kit
+and takes only the crosshair, readout and legend patterns; `.seg` comes from Stocks' CSS and the tile,
+delta and spark rules from Branding, both credited in `css/cve-obs.css`.
 
 **What is deliberately not copied:** candles (a CVE count has no open/high/low), RSI/MACD/stochastics
 (oscillators tuned to traded prices, meaningless on publication counts), drawings, the screener, and
@@ -467,12 +475,55 @@ shorter than the one on `main`.
 | **The settling window** | ~A third of recent records are unenriched (§12), so CWE and severity series **sag at the right edge** — every chart shows a false recent decline | Shade the settling window on every publish-date chart, label it, and **exclude it from indicator inputs** (SMA/Bollinger never see unsettled points). KEV listings by `dateAdded` do not wait on NVD and are not shaded. The edge (`settledThrough`) is per snapshot and can move earlier |
 | **Hindsight bias in backfill** | Backfilling a series with *today's* scores, CWEs or CVSS applied to past dates makes the past look better-classified than it was | Backfill only from data dated at the time (FIRST's dated EPSS files, KEV `dateAdded`); anything else starts at its first recorded tick |
 | **Recomputable vs attested** | Mixing the two hides which numbers anyone can check | Series keyed by **publish date or KEV date** are *recomputable* — re-derived from the current snapshot every run, so they revise as records settle. **Backlog and status mix are attested** — they exist only from the first recorded tick — *until weekly snapshots are archived, which §19.2 now does*. **Rejections, net change and KEV adds/removals stay attested even then** (they compare two runs, not one snapshot). Each chart says which kind it is |
-| **Market language** | "Bullish", "breakout", "sell-off" imply a forecast and a trade | Plain words only: *rising*, *falling*, *spike*, *unusual*, *sustained* |
+| **Market language** | "Bullish", "breakout", "sell-off" imply a forecast and a trade | Plain words only: *rising*, *falling*, *spike*, *unusual*, *sustained*. For the same reason the view is not called "Ticker": it shipped as **Trends** (2026-10-11), and a test (`js/i18n-parity.test.mjs`) fails the build on the market words in any string |
 | **The composite** | The temptation to sum tickers into a "Carino index" | **No composite index.** §15's "no proprietary scoring" covers it |
-| **Forecasting** | A trend line extended past today is a prediction | **No forecasting** — nothing is drawn past the last tick |
+| **Forecasting** | A trend line extended past today is a prediction | **Projection (§21a), decided by the owner 2026-10-11, reversing the earlier "No forecasting" rule.** Projections live only in Projection mode. They project only monthly volume, weekly volume, the Critical+High share of scored CVEs, and monthly KEV additions. Inputs are complete months, or settled weeks that end at `settledThrough`. Every model is backtested from a rolling origin against "same as last period", and is drawn only if it beats that by ≥10%. Bands are empirical out-of-sample quantiles; they are never widened, and their measured coverage is printed. Points are dashed past the input edge and labelled "projection — not a measurement". The horizon is ≤3 months or ≤26 weeks. Never projected: backlog or other attested metrics until 8 rows over 8 weeks exist, EPSS, vendor, CNA or CWE figures, or any composite or risk figure. The method is `proj-v1`, recomputable with `node tools/project.mjs` |
 
 §14 and §15 carry over unchanged. The view opens, on first load, with: **"Not a risk score, not a
 vulnerability assessment."** — dismissible, and restated in the footer of every exported image.
+
+### 21a. Projection — method `proj-v1` (decided 2026-10-11)
+
+The owner asked for a Projection section. It is allowed on these terms, and only on these; the code is
+`js/cve-project.js` (pure, no clock, no random numbers) and `node tools/project.mjs --stats stats.json.gz
+--ticks ticks.json.gz --kev enrich/kev.json.gz` prints exactly the numbers the page draws.
+
+- **Page frame.** A heading badge *not a measurement*; a fixed lede (arithmetic, not a measurement, not
+  a risk assessment, often wrong — and how often is printed under each chart); a stamp with the snapshot,
+  both `manifestSha256` values and `proj-v1`; a *Method* panel and a *Recompute* panel with the command
+  and the three sha256s. Sections, in order: track record, monthly, weekly, C+H share, KEV, not projected.
+- **Inputs.** `y[0..N-1]`, edge `N-1`; nothing past the edge ever reaches a model. Monthly: complete
+  months of `stats.byMonth` from 1999-01 (the current month is a hollow marker, never pro-rated, never an
+  input). Weekly: complete Sunday–Saturday weeks of `ticks.series.total` ending on or before
+  `settledThrough`; the weeks after it are hollow *still settling — not an input* dots, and if most of them
+  fall outside the 80% band the page says to read the range as a floor or ceiling. If the settling gap
+  exceeds 182 days the weekly projection is withheld. Share: the same weeks, (C+H)/(C+H+M+L+NONE), null
+  under 100 scored. KEV: additions per month by `dateAdded` from 2023-01 (the 2021–22 catalogue load is
+  left out), exempt from settling.
+- **Models.** Same as last period (naive), mean of last k, drift over k, log-linear over W, damped Holt on
+  logs (α .5, β .2, φ .9, fixed). Monthly candidates: naive, mean 3, drift 12, log-linear 6/12/24, damped
+  Holt; seasonal naive is scored for the Method text only. Weekly: naive, mean 4, log-linear 26. Share:
+  naive, mean 13 (errors in pp). KEV: the mean of the last 12 months, with a negative-binomial band centred
+  on that mean whose size r = m²/(v − m) comes from the mean m and variance v of the last 24 (so its
+  variance is mean + mean²/r; Poisson when v does not exceed m). The page prints m, v, r and the centre;
+  a Poisson band's backtest is printed beside it.
+- **Selection.** Rolling-origin backtest; score = mean error over steps 1–3 on the last 24 origins. A
+  candidate is drawn only if its score ≤ 0.9 × naive's; otherwise naive is drawn and the page says no
+  method beat it by enough. The losers stay in the table and as thin grey lines.
+- **Bands.** For each step h, the errors of the trailing 36 origins whose outcome was known (at least 12,
+  or the cone stops). Percentiles 2.5/10/25/50/75/90/97.5 of those errors around the method's point; the
+  drawn centre is the **median of past outcomes**. Asymmetric, never widened.
+- **Coverage.** Measured out of sample with the same rule and printed as "80% band held n of m times";
+  under 70% the page warns that the band has held less often than its label says.
+- **Horizon.** 3 months; weekly through the snapshot week plus 4, at most 26; share through the snapshot
+  week (what the share is likely to be once the queue drains).
+- **Notes printed when they apply.** A break note when the last 6 months run ≥1.5× the 12 before; *no
+  trend detected; projected flat* when |t| ≤ 2 on the share; the weekday pattern as the reason daily
+  counts are not projected.
+- **Not projected, with the reason on the page.** Backlog, queue and deferred share, status mix, record
+  count, rejected and net (attested — each shows its counter until 8 rows over 8 weeks exist); EPSS;
+  anything per vendor, CNA or CWE; daily volume; year totals; lag and CVSS drift; any composite or risk
+  figure.
 
 ## 22. Phasing **[E]**
 
@@ -480,7 +531,7 @@ vulnerability assessment."** — dismissible, and restated in the footer of ever
 |---|---|---|
 | **P0** — done 2026-10-10 | Pages serving `gh-pages` at `cve-data.carino.systems`, CORS `*`, first browser render of `stats.html` | — |
 | **P1** — publisher — **built 2026-10-10** | `ticks.json` (append-only, carried forward, committed to `main`) · weekly snapshot to Releases · EPSS window with backfill. In `CVE-data`: `tools/ticks.mjs`, `tools/epss-window.mjs`, `tools/archive.mjs`, `tools/ticks-guard.mjs`, wired into `publish.mjs` and `publish.yml`; formats in its `CONTRACT.md` §4 and §13–§15. Live from the first scheduled run after it lands on `main` | **~3–4 days** |
-| **P2** — the Ticker view | `ticker.html` beside `stats.html`: index, severity/CWE/KEV tickers by share, SMA 7/30, Bollinger with calendar annotations, settling-window shading, heatmap, movers board | **~1 week** |
+| **P2** — the Trends view — **built 2026-10-11** | Trends and Projection modes inside index.html (`#m=trends|proj`); stats.html redirects. Trends: status strip, pulse tiles, volume with ranges, grains and a usual-range band, severity and no-score mix, CWE change heatmap, KEV, recent KEV and EPSS changes, backlog, and the seven whole-corpus panels; settling-window shading throughout. Projection: §21a. ("Ticker" was renamed "Trends", §21 plain words) | **~1 week** |
 | **P3** — the watchlist | Per-CVE watchlist with EPSS "price", event markers (KEV add, re-score, rejection), alerts on sync, watchlist-only vendor tickers; client accumulation for CVEs outside the window | **~1 week** |
 
 **Order:** P1 first and soon — `ticks.json` is the only part that **cannot be built later**; every day

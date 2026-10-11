@@ -168,6 +168,7 @@
         .prov-link { display: block; padding-top: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: #555; text-decoration: none; }
         .prov-link:hover, .prov-link:focus-visible { color: #eab308; }
         .coverage { padding: 3px 8px; border: 1px solid #f59e0b; border-radius: 5px; background: #fffbeb; color: #b45309; font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; }
+        .coverage:empty { display: none; }
 
         /* KEV and EPSS filter what is already loaded, so they belong beside the
            severity floor rather than in a group of their own: one compact row
@@ -241,6 +242,63 @@
         .qv-note { font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; line-height: 1.5; color: #555; }
         .qv-dialog .btn-ghost:focus-visible, .qv-x:focus-visible, .qv-go:focus-visible,
         .qv-act:focus-visible { outline: 2px solid #eab308; outline-offset: 2px; }
+
+        /* --- Modes: List · Trends · Projection (js/cve-modes.js). The switch
+               sits on the light header and stays there in every mode; the
+               other two modes darken the whole column, because the charts
+               (css/cve-obs.css, loaded only when a mode is opened) are drawn
+               for a dark ground, like the rail and the dialogs. --- */
+        .mode-seg { display: inline-flex; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+        .mode-seg .seg-btn { height: 30px; padding: 0 12px; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-light); font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; transition: 0.2s; }
+        .mode-seg .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+        .mode-seg .seg-btn:hover { color: var(--primary); }
+        .mode-seg .seg-btn[aria-pressed="true"] { color: var(--primary); font-weight: 700; border-bottom-color: var(--accent); }
+        .mode-seg .seg-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+        .results-area.is-obs { background: #050505; }
+        .results-area.is-obs .results-header { background: #050505; border-color: #262626; }
+        .results-area.is-obs .mode-seg { background: #0b0b0b; border-color: #262626; }
+        .results-area.is-obs .mode-seg .seg-btn { color: #a3a3a3; }
+        .results-area.is-obs .mode-seg .seg-btn + .seg-btn { border-left-color: #262626; }
+        .results-area.is-obs .mode-seg .seg-btn:hover,
+        .results-area.is-obs .mode-seg .seg-btn[aria-pressed="true"] { color: #eab308; }
+        .results-area.is-obs .mode-seg .seg-btn:focus-visible { outline-color: #eab308; }
+        /* In the list the header keeps its one row wherever the old one fit
+           beside a 460px left half: the switch takes its width from the
+           result count, which wraps inside its half as it always could. The
+           flex-basis is what decides the break — without it the halves
+           would wrap at their unwrapped width, a whole sticky row for a few
+           pixels. Below that (a small laptop) the sort controls take a row of
+           their own, still on the right, rather than squeeze the count into
+           a column of single words. The dashboards' chip bar (#obsHeader) is
+           always a row of its own. */
+        .results-header { flex-wrap: wrap; row-gap: 10px; column-gap: 12px; }
+        .rh-left { flex: 1 1 460px; }
+        .rh-right { margin-left: auto; }
+        /* The list's own loader belongs to the list: a search still running
+           behind a chart must not grey the chart out. */
+        .is-obs #loader { display: none !important; }
+        .rh-obs { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+        .rh-obs[hidden] { display: none; }
+        .rh-left { min-width: 0; }
+        #obsRoot { color: #a3a3a3; }
+        #obsRoot > .o-loading { padding: 40px 0; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: #666; }
+        #obsRoot[hidden], .is-obs #resultsList, .is-obs #loadMoreWrap,
+        .is-obs .rh-left > :not(.mode-seg), .is-obs .rh-right { display: none; }
+        @media (max-width: 900px) {
+            /* The column's 15px top padding would leave a strip above the
+               sticky header for scrolled charts to show through; the
+               dashboards' header sticks to the very top and is slimmer. */
+            .results-area.is-obs .results-header { top: -15px; padding: 10px 0; margin-bottom: 12px; row-gap: 8px; }
+            /* On a phone the switch is a full-width row above the count, and
+               the count, coverage and status share the next row as before. */
+            .rh-left { flex-wrap: wrap; row-gap: 8px; }
+            .mode-seg .seg-btn { height: 44px; }
+            .results-count { flex: 1 1 0; min-width: 8em; }
+        }
+        @media (max-width: 560px) {
+            .mode-seg { flex: 1 1 100%; }
+            .mode-seg .seg-btn { flex: 1 1 0; padding: 0 8px; }
+        }
     </style>
 </head>
 <body>
@@ -309,7 +367,7 @@
             </form>
 
             <button type="button" class="prov" id="provenance"></button>
-            <a class="prov-link" href="stats.html" data-i18n>Observatory — the whole corpus, charted →</a>
+            <a class="prov-link" href="#m=trends" id="obsLink" data-i18n>Observatory — the whole corpus, charted →</a>
         </div>
 
         <div class="results-area">
@@ -319,6 +377,11 @@
 
             <div class="results-header">
                 <div class="rh-left">
+                    <div class="mode-seg" id="modeSwitch" role="group">
+                        <button type="button" class="seg-btn" data-mode="list" aria-pressed="true" data-i18n>List</button>
+                        <button type="button" class="seg-btn" data-mode="trends" aria-pressed="false" data-i18n>Trends</button>
+                        <button type="button" class="seg-btn" data-mode="proj" aria-pressed="false" data-i18n>Projection</button>
+                    </div>
                     <span class="results-count" id="resultCount"></span>
                     <span class="coverage" id="coverage"></span>
                     <span class="api-status" id="apiStatus"></span>
@@ -337,10 +400,22 @@
                     <button type="button" class="btn-ghost" id="exportCsv">CSV</button>
                     <button type="button" class="btn-ghost" id="exportJson">JSON</button>
                 </div>
+
+                <!-- The freshness chip and the section chip bar of whichever
+                     mode is showing; that mode's module fills it. -->
+                <div class="rh-obs" id="obsHeader" hidden></div>
             </div>
 
             <div id="resultsList"></div>
             <div id="loadMoreWrap"></div>
+
+            <!-- Trends and Projection (js/cve-modes.js). Empty until a mode is
+                 opened: nothing behind them loads before that. -->
+            <section id="obsRoot" class="obs" hidden>
+                <div id="obsBanner"></div>
+                <div id="obsTrends" hidden></div>
+                <div id="obsProj" hidden></div>
+            </section>
         </div>
     </div>
 
@@ -404,7 +479,12 @@ const SEV_ORDER = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 // loaded (§10). They are part of the view — the hash carries them, quick views
 // carry them — but they are NEVER part of the question asked of a source, so
 // nothing in buildStreams() or the query plan reads them.
-const state = { keyword: '', timeframe: '90', severity: '', sort: 'date-new', kev: false, epssMin: 0 };
+//
+// `mode` and `section` are the results column's mode (js/cve-modes.js) and the
+// part of it on screen. They live in the same hash so a link opens both, and
+// only CveModes.setMode() changes them.
+const state = { keyword: '', timeframe: '90', severity: '', sort: 'date-new', kev: false, epssMin: 0,
+    mode: 'list', section: '' };
 
 const DEFAULT_MIRROR = 'https://cve-data.carino.systems';
 
@@ -427,6 +507,10 @@ let floorCount = 0;
 let kevCount = 0;
 let seenIds = new Set();
 let retrievedAt = null;
+// A page opened in Trends or Projection has not searched yet, and a search
+// run while the list is hidden would cost NVD requests nobody sees: the list
+// remembers it owes one and runs it when it is shown.
+let listDirty = false;
 
 /* ---- helpers ------------------------------------------------------ */
 
@@ -1231,7 +1315,9 @@ function setEpssOption(v) {
 
 // The whole view is in the hash, so a shared link reproduces what the sender
 // saw. The old build put only the keyword there.
-function writeHash() {
+// `push` adds a history entry (a mode change); everything else replaces the
+// current one, as it always has.
+function writeHash(push) {
     const p = new URLSearchParams();
     if (state.keyword) p.set('q', state.keyword);
     if (state.timeframe !== '90') p.set('t', state.timeframe);
@@ -1239,8 +1325,10 @@ function writeHash() {
     if (state.sort !== 'date-new') p.set('o', state.sort);
     if (state.kev) p.set('k', '1');
     if (state.epssMin > 0) p.set('e', String(state.epssMin));
+    if (state.mode !== 'list') p.set('m', state.mode);
+    if (state.section) p.set('x', state.section);
     const h = p.toString();
-    history.replaceState(null, '', h ? '#' + h : location.pathname + location.search);
+    history[push ? 'pushState' : 'replaceState'](null, '', h ? '#' + h : location.pathname + location.search);
 }
 
 function readHash() {
@@ -1262,6 +1350,31 @@ function readHash() {
         // a link carrying one gets no filter rather than an invented bound.
         state.epssMin = isFinite(n) && n > 0 && n <= 1 ? n : 0;
     }
+    if (p.has('m') && /^(trends|proj)$/.test(p.get('m'))) state.mode = p.get('m');
+    if (p.has('x') && /^[a-z-]{1,20}$/.test(p.get('x'))) state.section = p.get('x');
+}
+
+// Back and Forward walk between modes. Only `m` and `x` are read again: the
+// list's own keys stay read-once, so going back never re-runs a search with
+// filters the user has since changed.
+function onHistoryMove() {
+    if (!window.CveModes) return;
+    const raw = location.hash.replace(/^#/, '');
+    const p = new URLSearchParams(raw.indexOf('=') === -1 ? '' : raw);
+    const m = /^(trends|proj)$/.test(p.get('m') || '') ? p.get('m') : 'list';
+    const x = m !== 'list' && /^[a-z-]{1,20}$/.test(p.get('x') || '') ? p.get('x') : '';
+    // popstate and hashchange both fire for one Back; the second is a no-op.
+    if (m === CveModes.current() && x === state.section) return;
+    CveModes.setMode(m, { push: false, section: x });
+}
+
+// Leaving Trends or Projection for the list by searching: the mode change is
+// a history entry of its own, and the search that follows is what clears the
+// debt, so onList must not run a second one.
+function leaveObs() {
+    if (!window.CveModes || CveModes.current() === 'list') return;
+    listDirty = false;
+    CveModes.setMode('list', { push: true });
 }
 
 function buildYearOptions() {
@@ -1447,6 +1560,7 @@ function applyView(v) {
     state.kev = !!v.k;
     const e = parseFloat(v.e);
     state.epssMin = isFinite(e) && e > 0 && e <= 1 ? e : 0;
+    leaveObs();
     writeControls();
     runSearch();
 }
@@ -1639,8 +1753,27 @@ function wire() {
 
     document.getElementById('searchForm').addEventListener('submit', (e) => {
         e.preventDefault();
+        leaveObs();
         runSearch();
     });
+
+    if (window.CveModes) {
+        CveModes.init({
+            onList: () => { if (listDirty) { listDirty = false; runSearch(); } },
+            state,
+            writeHash,
+        });
+        document.getElementById('modeSwitch').setAttribute('aria-label', t_('Mode'));
+        // The rail's link into the observatory. A plain href still works with
+        // scripts off the page; with them, it is a mode change and the drawer
+        // closes behind it (the drawer script lists #obsLink).
+        document.getElementById('obsLink').addEventListener('click', (e) => {
+            e.preventDefault();
+            CveModes.setMode('trends', { push: true });
+        });
+        window.addEventListener('popstate', onHistoryMove);
+        window.addEventListener('hashchange', onHistoryMove);
+    }
 
     wireViews();
 
@@ -1718,9 +1851,17 @@ function wire() {
     // The dialog downloads, updates or deletes the corpus; when it does, the
     // plan for the next query changes, so re-read what the store now holds.
     window.addEventListener('cve:datachanged', () => {
+        // The mirror may have changed, so the next dashboard load re-reads it.
+        if (window.CveObsData) CveObsData.invalidate();
         refreshCorpusMeta().then(() => {
             syncTried = true;
-            runSearch();
+            if (state.mode !== 'list' && window.CveModes) {
+                // The list is hidden: owe it the search, redraw what is shown.
+                listDirty = true;
+                CveModes.setMode(state.mode, { push: false, section: state.section });
+            } else {
+                runSearch();
+            }
             // The mirror may have changed with it, and the feeds hang off that
             // same manifest — so re-check them rather than keep badges from an
             // address the user has just stopped using.
@@ -1730,7 +1871,11 @@ function wire() {
     });
 
     refreshCorpusMeta()
-        .then(runSearch)
+        .then(() => {
+            if (state.mode === 'list' || !window.CveModes) return runSearch();
+            listDirty = true;
+            CveModes.setMode(state.mode, { push: false, section: state.section });
+        })
         // Both run after the first paint and neither can disturb it:
         // backgroundSync never rejects, and loadEnrichment only adds badges.
         .then(() => setTimeout(() => { backgroundSync().then(loadEnrichment); }, 1500));
@@ -1750,6 +1895,34 @@ window.cveRerender = function () {
     renderChips();
     if (document.getElementById('viewsDialog').open) renderViewList();
     if (records.length || streams.length) renderList();
+    document.getElementById('modeSwitch').setAttribute('aria-label', t_('Mode'));
+    if (window.CveTrends) CveTrends.rerender();
+    if (window.CveProjection) CveProjection.rerender();
+    if (window.CveCorpusPanels) CveCorpusPanels.rerender();
+};
+
+// Drill-down from Trends and Projection: the only way a chart reaches the
+// list. `f` is {q?, s?, k?, t?} — only filters the list can express — and it
+// is written exactly as a hand-made search would be, so the hash, the rail
+// and the result count all agree about what was asked. It is a whole view,
+// like a quick view: a filter it does not name goes back to its default
+// (keyword, severity, KEV, 90 days, EPSS floor), or a keyword left from an
+// earlier drill would turn "KEV additions, last 30 days" into one CVE. The
+// sort order is how the list is read, not what it holds, so it stays.
+window.cveApplyListFilters = function (f) {
+    f = f || {};
+    state.keyword = typeof f.q === 'string' ? f.q : '';
+    state.severity = typeof f.s === 'string' ? f.s : '';
+    state.kev = !!f.k;
+    state.timeframe = f.t !== undefined && f.t !== null ? String(f.t) : '90';
+    state.epssMin = 0;
+    writeControls();
+    state.mode = 'list';
+    state.section = '';
+    writeHash(true);
+    listDirty = false;
+    if (window.CveModes) CveModes.setMode('list', { push: false });
+    runSearch();
 };
 </script>
 <!-- The offline corpus. Deferred, so they attach their globals before wire()
@@ -1761,6 +1934,9 @@ window.cveRerender = function () {
 <script src="js/cve-enrich.js" defer></script>
 <script src="js/cve-data-ui.js" defer></script>
 <script src="js/cve-watch.js" defer></script>
+<!-- The mode switch. Everything Trends and Projection need is injected by
+     CveModes.ensure() the first time one is opened, never before. -->
+<script src="js/cve-modes.js" defer></script>
 <script src="carino-navbar.js" data-app="CVE" data-repo="CVE" defer></script>
 <script src="carino-lang.js" defer></script>
 <script src="i18n.js" defer></script>
@@ -1788,7 +1964,7 @@ window.cveRerender = function () {
     window.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
     // Running a search from inside the drawer should reveal the results behind it.
     controls.addEventListener('click', function (e) {
-        if (MQ.matches && e.target.closest('.tag, .search-btn')) close();
+        if (MQ.matches && e.target.closest('.tag, .search-btn, #obsLink')) close();
     });
 
     function addBtn() {
