@@ -5,11 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CVE Observatory</title>
-    <!-- The observatory is now the Trends mode of index.html (one renderer,
-         one hash check). This page only forwards old links. The script runs
-         first and keeps the panel and ?mirror=; the refresh is the fallback
-         with scripts off. -->
-    <meta http-equiv="refresh" content="0;url=index.html#m=trends&amp;x=corpus">
+    <!-- The observatory is now the Observatory mode of index.html (one
+         renderer, one hash check). This page only forwards old links. The
+         script runs first and keeps the panel and ?mirror=; the refresh is
+         the fallback with scripts off. -->
+    <meta http-equiv="refresh" content="0;url=index.html#m=obs">
     <script>
     (function () {
         'use strict';
@@ -18,14 +18,14 @@
         var PANELS = { backlog: 'backlog', kev: 'kev', volume: 'volume', severity: 'severity',
             cwe: 'cwe', cna: 'cna', quality: 'cna', rhythm: 'rhythm' };
         var h = location.hash.replace(/^#/, '');
-        var x = Object.prototype.hasOwnProperty.call(PANELS, h) ? 'corpus-' + PANELS[h] : 'corpus';
-        location.replace('index.html' + location.search + '#m=trends&x=' + x);
+        var x = Object.prototype.hasOwnProperty.call(PANELS, h) ? '&x=' + PANELS[h] : '';
+        location.replace('index.html' + location.search + '#m=obs' + x);
     })();
     </script>
 </head>
 <body style="background:#050505;color:#a3a3a3;font-family:'IBM Plex Mono',monospace;padding:24px">
     <noscript>
-        <p>The observatory has moved: <a href="index.html#m=trends&amp;x=corpus" style="color:#eab308">open Trends in CVE Radar →</a></p>
+        <p>The observatory has moved: <a href="index.html#m=obs" style="color:#eab308">open the Observatory in CVE Radar →</a></p>
     </noscript>
 </body>
 </html>

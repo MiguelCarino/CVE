@@ -366,8 +366,11 @@ is it moving* — the same question a markets panel answers, and the fleet alrea
 scopes a **stocks-like panel for CVE tendencies**, built from the corpus and the Stocks codebase.
 
 **Where it lives:** inside the CVE site — **built 2026-10-11 as the Trends and Projection modes inside
-`index.html` (`#m=trends|proj`); `stats.html` redirects** there (`#m=trends&x=corpus`), so there is one
-renderer and one manifest-hash check. The list stays the default mode. Same chrome, same mirror.
+`index.html` (`#m=trends|proj`), with the whole-corpus panels split out on 2026-10-12 into an
+Observatory mode of their own (`#m=obs`); `stats.html` redirects** there (`#m=obs&x=<panel>`), so there
+is one renderer and one manifest-hash check. The list stays the default mode, and it loads first and
+alone: the three dashboards are prepared behind it, in small idle-time pieces, only once its first
+search has settled — and after its KEV/EPSS follow-up, which the pieces wait for — and each mode's button opens only when that mode is ready (`js/cve-modes.js`). Same chrome, same mirror.
 **No new subdomain** — the fleet merge rule (a tool is consolidated, never split into a
 sub-hub) applies, and a second site would only duplicate the manifest, the hash discipline and the
 integrity rules.
@@ -531,7 +534,7 @@ The owner asked for a Projection section. It is allowed on these terms, and only
 |---|---|---|
 | **P0** — done 2026-10-10 | Pages serving `gh-pages` at `cve-data.carino.systems`, CORS `*`, first browser render of `stats.html` | — |
 | **P1** — publisher — **built 2026-10-10** | `ticks.json` (append-only, carried forward, committed to `main`) · weekly snapshot to Releases · EPSS window with backfill. In `CVE-data`: `tools/ticks.mjs`, `tools/epss-window.mjs`, `tools/archive.mjs`, `tools/ticks-guard.mjs`, wired into `publish.mjs` and `publish.yml`; formats in its `CONTRACT.md` §4 and §13–§15. Live from the first scheduled run after it lands on `main` | **~3–4 days** |
-| **P2** — the Trends view — **built 2026-10-11** | Trends and Projection modes inside index.html (`#m=trends|proj`); stats.html redirects. Trends: status strip, pulse tiles, volume with ranges, grains and a usual-range band, severity and no-score mix, CWE change heatmap, KEV, recent KEV and EPSS changes, backlog, and the seven whole-corpus panels; settling-window shading throughout. Projection: §21a. ("Ticker" was renamed "Trends", §21 plain words) | **~1 week** |
+| **P2** — the Trends view — **built 2026-10-11** | Trends and Projection modes inside index.html (`#m=trends|proj`); stats.html redirects. Trends: status strip, pulse tiles, volume with ranges, grains and a usual-range band, severity and no-score mix, CWE change heatmap, KEV, recent KEV and EPSS changes, backlog; settling-window shading throughout. Projection: §21a. ("Ticker" was renamed "Trends", §21 plain words.) 2026-10-12: the seven whole-corpus panels became an Observatory mode (`#m=obs`), and all three are prepared behind the list after its first search instead of on click, with per-locale string files | **~1 week** |
 | **P3** — the watchlist | Per-CVE watchlist with EPSS "price", event markers (KEV add, re-score, rejection), alerts on sync, watchlist-only vendor tickers; client accumulation for CVEs outside the window | **~1 week** |
 
 **Order:** P1 first and soon — `ticks.json` is the only part that **cannot be built later**; every day

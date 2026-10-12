@@ -70,7 +70,15 @@ const I18N = {
         'List': 'Lista',
         'Trends': 'Tendencias',
         'Projection': 'Proyección',
-        // Shown before js/i18n-obs.js has loaded, so it cannot live there.
+        'Observatory': 'Observatorio',
+        'Proj.': 'Proy.',
+        'Obs.': 'Obs.',
+        'Loading…': 'Cargando…',
+        'Could not be loaded — open it to see why.': 'No se pudo cargar: ábralo para ver por qué.',
+        '%1 will open when it has loaded.': '%1 se abrirá cuando termine de cargar.',
+        '%1 is ready.': '%1: listo para abrir.',
+        '%1 could not be loaded.': 'No se pudo cargar %1.',
+        // Shown before js/i18n-obs-<locale>.js has loaded, so it cannot live there.
         'Loading charts…': 'Cargando gráficas…',
         'complete through %1': 'completo hasta %1',
         // Results header
@@ -364,7 +372,15 @@ const I18N = {
         'List': 'Lista',
         'Trends': 'Tendências',
         'Projection': 'Projeção',
-        // Shown before js/i18n-obs.js has loaded, so it cannot live there.
+        'Observatory': 'Observatório',
+        'Proj.': 'Proj.',
+        'Obs.': 'Obs.',
+        'Loading…': 'Carregando…',
+        'Could not be loaded — open it to see why.': 'Não foi possível carregar — abra para ver por quê.',
+        '%1 will open when it has loaded.': '%1 abrirá quando terminar de carregar.',
+        '%1 is ready.': '%1: pronto para abrir.',
+        '%1 could not be loaded.': 'Não foi possível carregar %1.',
+        // Shown before js/i18n-obs-<locale>.js has loaded, so it cannot live there.
         'Loading charts…': 'Carregando gráficos…',
         'complete through %1': 'completo até %1',
         'Showing %1 of %2 loaded (%3 matched)': 'Exibindo %1 de %2 carregados (%3 correspondências)',
@@ -648,7 +664,15 @@ const I18N = {
         'List': '一覧',
         'Trends': '推移',
         'Projection': '推計',
-        // Shown before js/i18n-obs.js has loaded, so it cannot live there.
+        'Observatory': '観測所',
+        'Proj.': '推計',
+        'Obs.': '観測所',
+        'Loading…': '読み込み中…',
+        'Could not be loaded — open it to see why.': '読み込めませんでした — 開くと理由が表示されます。',
+        '%1 will open when it has loaded.': '読み込みが終わると%1が開きます。',
+        '%1 is ready.': '%1の準備ができました。',
+        '%1 could not be loaded.': '%1を読み込めませんでした。',
+        // Shown before js/i18n-obs-<locale>.js has loaded, so it cannot live there.
         'Loading charts…': 'グラフを読み込み中…',
         'complete through %1': '%1まで完全',
         'Showing %1 of %2 loaded (%3 matched)': '取得%2件中%1件を表示（該当%3件）',
@@ -933,7 +957,15 @@ const I18N = {
         'List': 'Список',
         'Trends': 'Динамика',
         'Projection': 'Проекция',
-        // Shown before js/i18n-obs.js has loaded, so it cannot live there.
+        'Observatory': 'Обсерватория',
+        'Proj.': 'Проекц.',
+        'Obs.': 'Обс.',
+        'Loading…': 'Загрузка…',
+        'Could not be loaded — open it to see why.': 'Не удалось загрузить — откройте, чтобы узнать причину.',
+        '%1 will open when it has loaded.': '«%1» откроется, когда загрузится.',
+        '%1 is ready.': '«%1»: можно открыть.',
+        '%1 could not be loaded.': 'Не удалось загрузить «%1».',
+        // Shown before js/i18n-obs-<locale>.js has loaded, so it cannot live there.
         'Loading charts…': 'Загрузка графиков…',
         'complete through %1': 'полные данные по %1',
         'Showing %1 of %2 loaded (%3 matched)': 'Показано %1 из %2 загруженных (найдено %3)',

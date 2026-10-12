@@ -21,7 +21,7 @@ Live at **https://cve.carino.systems**
 - **Export** — CSV or JSON of what is on screen. The JSON carries the query, the retrieval timestamp and both counts.
 - **Shareable views** — the whole view is in the URL hash (`#q=chrome&t=2025&s=HIGH&o=score-high`), so a shared link reproduces what the sender saw. The mode and section ride along (`&m=trends&x=volume`), and Back walks between modes. Old links carrying a bare keyword still work.
 - **KEV and EPSS** — cards carry a **KEV** badge when CISA lists the CVE as known-exploited, and an EPSS chip with the exploitation probability. Both are filterable. Neither service can be fetched by a browser at all; see [Exploitation and probability](#exploitation-and-probability--kev-and-epss).
-- **Three modes: List · Trends · Projection** — the results header switches the column between the classic list (the default, unchanged), [**Trends**](index.html#m=trends) — the corpus as it moves, with interactive charts, plus the seven whole-corpus observatory panels — and [**Projection**](index.html#m=proj), four counts extended forward with their measured track record. Neither of the two loads anything until it is opened, and neither downloads a shard. See [The observatory](#the-observatory--trends-and-projection).
+- **Four modes: List · Trends · Projection · Observatory** — the results header switches the column between the classic list (the default, unchanged), [**Trends**](index.html#m=trends) — the corpus as it moves, with interactive charts — [**Projection**](index.html#m=proj), four counts extended forward with their measured track record, and [**Observatory**](index.html#m=obs), the seven whole-corpus panels. The list loads first and alone; the other three are prepared behind it once its first search has settled, and each button opens only when its mode is ready. None of them downloads a shard. See [The observatory](#the-observatory--trends-projection-observatory).
 - **Watchlists** — name a list of product terms once and ask *"what is new for my estate since my last sync?"* Exports to CSV, JSON and a printable HTML, each stamped with the snapshot it was computed from.
 - **Provenance** — the rail states where the data came from and when it was retrieved.
 - **Mobile drawer** — below 900px the filter rail becomes an off-canvas drawer toggled by a ☰ button injected into the shared navbar; it closes via the scrim, the Escape key, or automatically when a quick-tag or Search is tapped.
@@ -129,22 +129,39 @@ show nothing at all, not because nothing is exploited but because the page you h
 holds none of it. Against a local corpus the same filter is exact, because every record is present
 to be filtered. When the filter is on and the answer came from NVD live, the header says so.
 
-## The observatory — Trends and Projection
+## The observatory — Trends, Projection, Observatory
 
-The observatory is two modes of `index.html`, switched from the results header: **List** (the
-default, exactly the page it was), **Trends** (`index.html#m=trends`) and **Projection**
-(`index.html#m=proj`). `stats.html` survives only as a redirect, so old links — including its panel
-anchors (`stats.html#kev`) — land on the matching section. The modes read `manifest.json`,
+The observatory is three modes of `index.html`, switched from the results header: **List** (the
+default, exactly the page it was), **Trends** (`index.html#m=trends`), **Projection**
+(`index.html#m=proj`) and **Observatory** (`index.html#m=obs`, the seven whole-corpus panels).
+`stats.html` survives only as a redirect, so old links — including its panel anchors
+(`stats.html#kev`) — land on the matching panel. The modes read `manifest.json`,
 `stats.json.gz` and `ticks.json.gz` — a few tens of KB together — plus the KEV feed and, only when
 that section is opened, the 90-day EPSS window; **never a shard**. The most interesting public-facing
 thing here is also the smallest download, so it works on a phone, on hotel wifi, and for someone who
-has no intention of storing 30 MB. Nothing behind the two modes is fetched, or even loaded as code,
-until one of them is opened (`js/cve-modes.js` is the only eager addition).
+has no intention of storing 30 MB.
 
-**The hash.** `m=trends|proj` picks the mode and `x=<section>` the section — Trends: `status`,
-`pulse`, `volume`, `mix`, `cwe`, `kev`, `movers`, `backlog`, `corpus`, or `corpus-<panel>` to open one
-whole-corpus panel; Projection: `record`, `monthly`, `weekly`, `share`, `kev`, `notproj`, `method`,
-`recompute`. The list's own keys (`q`, `t`, `s`, …) are kept beside them, so a round trip through a
+**Loading.** `js/cve-modes.js` is the only eager addition, and until the list's first search has
+settled (or 3 s have passed, if NVD is slow) it does nothing at all. Then it prepares the three modes
+behind the list, in that order, one small piece at a time in idle periods and with low-priority
+requests: scripts, the verified files, the arithmetic, and the DOM, built off-screen at the column's
+width, where it stays laid out (`content-visibility`, never `display: none` or a move). Each mode's
+button stays disabled, with a progress bar, until that mode is complete; opening it is then a
+paint, not a render or a layout. A link that names a mode opens the list first and switches by
+itself when the mode is ready (unless the reader has gone elsewhere). `?noobs`, Save-Data or
+`prefers-reduced-data` skip the background work: a mode is then loaded when it is clicked. The
+dashboard strings come one file per locale (`js/i18n-obs-<locale>.js`); English loads none. The
+list's own follow-up — the corpus sync and the KEV and EPSS feeds — goes before any background
+piece; the dashboards' four web-font weights are fetched as files and enter the page with the list's
+next rebuild, so they never cost the list a relayout of its own. A resize while a mode is not on
+screen builds it again off-screen at the new width (its button waits meanwhile), and each mode is
+announced to screen readers the first time it becomes ready.
+
+**The hash.** `m=trends|proj|obs` picks the mode and `x=<section>` the section — Trends: `status`,
+`pulse`, `volume`, `mix`, `cwe`, `kev`, `movers`, `backlog`; Projection: `record`, `monthly`, `weekly`,
+`share`, `kev`, `notproj`, `method`, `recompute`; Observatory: `backlog`, `kev`, `volume`, `severity`,
+`cwe`, `cna`, `rhythm`. Links from when the panels were part of Trends (`#m=trends&x=corpus-kev`)
+open the Observatory. The list's own keys (`q`, `t`, `s`, …) are kept beside them, so a round trip through a
 mode loses no search. **`?mirror=https://…`** points both modes at another CVE-data mirror for that
 page load (it is never saved).
 
@@ -152,7 +169,7 @@ page load (it is never saved).
 manifest hash recomputed in the page, how far publication counts have settled — and six tiles, then
 the publication volume (ranges 3M to All, day/week/month, a usual-range band), the severity and
 no-score mix, the CWE change heatmap, KEV additions, the newest KEV entries and the largest EPSS
-moves, the NVD backlog, and the seven whole-corpus panels below. Every chart has a crosshair and
+moves, and the NVD backlog. Every chart has a crosshair and
 readout (pointer, touch or arrow keys), a stamp, a sample size and a table of its numbers. The days
 NVD has not finished enriching are hatched and kept out of every average, band and comparison.
 
@@ -165,7 +182,8 @@ full rules, and what is never projected, are [SCOPE §21a](SCOPE.md#21a-projecti
 exactly the numbers the page draws.
 
 Charts are **inline SVG with no library and no CDN**, dark like the rail, self-hosted fonts like the
-rest of the fleet; every string is translated with the rest of the site. The whole-corpus panels:
+rest of the fleet; every string is translated with the rest of the site. The Observatory's
+whole-corpus panels:
 
 | Panel | |
 |---|---|
@@ -232,10 +250,19 @@ node tools/smoke.mjs        # headless Chromium against the fixture mirror in js
 ```
 
 `tools/smoke.mjs` serves the repository with `python3 -m http.server`, drives
-`/usr/bin/chromium-browser` over the DevTools protocol, and checks that List mode makes no dashboard
-request, that both modes draw and verify, that Back walks between modes, that nothing scrolls sideways
-at 375 px, and that old `stats.html` links land where they pointed. `--live` runs it against the real
-mirror; `--shots=DIR` keeps the screenshots.
+`/usr/bin/chromium-browser` over the DevTools protocol, answers every NVD request itself (a canned
+page after a fixed delay, so the list's timing is the same on every run), and checks that nothing of
+the dashboards starts before the list has settled and nothing at all with `?noobs`, that the three
+modes draw and verify, that their buttons open in order and a prepared mode opens in under 150 ms,
+that the list paints no later than without the dashboards (within 10% + 50 ms, with NVD answering in
+1.5 s and in 4.5 s) and enables its KEV filter no later either, that no long frame during the
+preparation is the dashboards' script and no web font of theirs relays the list out, that deep
+links open their mode when it is ready and a click while one loads gets its own history entry, that
+sorting or filtering cancels a waiting link, that a resize rebuilds hidden modes at the new width,
+that Back walks between modes, that the header keeps one row at 1366 px, that nothing scrolls
+sideways at 375 px and four buttons fit at 320 px in every language, and that old `stats.html`
+links land where they pointed. It prints the timings, and the same at 4× CPU throttle. `--live` runs it
+against the real mirror; `--shots=DIR` keeps the screenshots; `--runs=N` sets the timing runs.
 
 ## Documents
 

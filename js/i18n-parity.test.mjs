@@ -2,11 +2,11 @@
    i18n-parity.test.mjs — run with `node --test js/*.test.mjs`.
 
    Zero dependencies, node:test and node:assert only. i18n.js is a classic
-   script whose dictionary is a top-level `const I18N`; js/i18n-obs.js (the
-   lazily loaded Trends/Projection strings) extends it with Object.assign.
-   Both are evaluated here in one Function body, so i18n-obs.js sees the
-   const exactly as it does in the page, and the DOM half of i18n.js (from
-   `function currentFleetLang` on) is cut off.
+   script whose dictionary is a top-level `const I18N`; js/i18n-obs-<locale>.js
+   (the dashboard strings, one lazily loaded file per locale) extend it with
+   Object.assign. All five are evaluated here in one Function body, so each
+   locale file sees the const exactly as it does in the page, and the DOM
+   half of i18n.js (from `function currentFleetLang` on) is cut off.
 
    What is defended: English source strings ARE the keys, so a missing key
    does not throw, it silently shows English. These checks are the only
@@ -26,11 +26,13 @@ const LOCALES = ['es', 'pt-BR', 'ja', 'ru'];
 
 /* ---- load the dictionary ------------------------------------------- */
 
-const OBS = 'js/i18n-obs.js';
-const HAS_OBS = existsSync(new URL(OBS, ROOT));
+// One file per locale, and each must exist: a locale whose file is missing
+// would show the dashboards in English with nothing here to say so.
+const OBS = LOCALES.map((l) => 'js/i18n-obs-' + l + '.js');
+for (const f of OBS) assert.ok(existsSync(new URL(f, ROOT)), f + ' is missing');
 const I18N = new Function(
     read('i18n.js').split('function currentFleetLang')[0] + ';\n' +
-    (HAS_OBS ? read(OBS) : '') + ';\nreturn I18N;')();
+    OBS.map(read).join(';\n') + ';\nreturn I18N;')();
 
 /* ---- collect the literals ------------------------------------------ */
 
@@ -119,4 +121,14 @@ test('English keys use no market vocabulary', () => {
     const bad = [...keys].filter((k) =>
         BANNED.test(k) || (/risk score/i.test(k) && k !== DISCLAIMER));
     assert.deepEqual(bad, []);
+});
+
+test('each dashboard locale file extends its own locale and nothing else', () => {
+    // The page loads only the current locale's file; one that also wrote
+    // another locale's keys would make that locale depend on load order.
+    for (const l of LOCALES) {
+        const src = read('js/i18n-obs-' + l + '.js');
+        const targets = [...src.matchAll(/Object\.assign\(\s*I18N\[\s*'([^']+)'\s*\]/g)].map((m) => m[1]);
+        assert.deepEqual(targets, [l], 'js/i18n-obs-' + l + '.js extends ' + JSON.stringify(targets));
+    }
 });
