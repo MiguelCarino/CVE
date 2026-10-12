@@ -821,7 +821,9 @@ async function main() {
                 expect(rows === 4, 'track-record rows: ' + rows + ', want 4');
                 const np = '(' + SECTION_JS + ')(' + JSON.stringify(SEL.proj) + ', "notproj")';
                 const npText = await page.eval(`(function(){var s=${np}||document.querySelector(${JSON.stringify(SEL.proj)});return s?s.textContent:'';})()`);
-                expect(/\b1 of 8\b/.test(npText), 'Not projected lacks "1 of 8"');
+                // The fixture has one attested row; the live mirror gains one a week.
+                expect(LIVE ? /\d+ of 8\b|attested rows since/.test(npText) : /\b1 of 8\b/.test(npText),
+                    'Not projected lacks the attested-row gate (' + (LIVE ? '"N of 8"' : '"1 of 8"') + ')');
                 // The KEV cone is drawn complete, not "loading" then patched.
                 const kev = '(' + SECTION_JS + ')(' + JSON.stringify(SEL.proj) + ', "kev")';
                 expect(await page.eval(`(function(){var s=${kev};return !!s&&!!s.querySelector('.o-cone80');})()`), 'KEV section has no cone');
