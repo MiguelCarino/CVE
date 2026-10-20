@@ -285,3 +285,7 @@ relicense. Each keeps its own terms, and each carries its own notice.
 
 Those files travel with any fork, mirror or repackaging of this repository, and
 their notices must travel with them.
+
+## NVD notice
+
+This product uses data from the NVD API but is not endorsed or certified by the NVD.

@@ -180,6 +180,7 @@
         /* A link, not a control: the rail still gains no settings (§6). */
         .prov-link { display: block; padding-top: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: #555; text-decoration: none; }
         .prov-link:hover, .prov-link:focus-visible { color: #eab308; }
+        .nvd-note { margin: 10px 0 0; font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem; line-height: 1.5; color: #555; }
         .coverage { padding: 3px 8px; border: 1px solid #f59e0b; border-radius: 5px; background: #fffbeb; color: #b45309; font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; }
         .coverage:empty { display: none; }
 
@@ -454,6 +455,8 @@
 
             <button type="button" class="prov" id="provenance"></button>
             <a class="prov-link" href="#m=obs" id="obsLink" data-i18n>Observatory — the whole corpus, charted →</a>
+            <!-- Wording required by the NVD API terms of use. -->
+            <p class="nvd-note" data-i18n>This product uses data from the NVD API but is not endorsed or certified by the NVD.</p>
         </div>
 
         <div class="results-area">

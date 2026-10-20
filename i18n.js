@@ -65,6 +65,7 @@ const I18N = {
         'Data: local snapshot %1 + NVD live': 'Datos: instantánea local %1 + NVD en vivo',
         'Data source': 'Origen de los datos',
         'Observatory — the whole corpus, charted →': 'Observatorio — todo el corpus, en gráficas →',
+        'This product uses data from the NVD API but is not endorsed or certified by the NVD.': 'Este producto usa datos de la API de la NVD, pero la NVD no lo respalda ni lo certifica.',
         // The mode switch in the results header (eager: it is on the List page).
         'Mode': 'Modo',
         'List': 'Lista',
@@ -367,6 +368,7 @@ const I18N = {
         'Data: local snapshot %1 + NVD live': 'Dados: instantâneo local %1 + NVD ao vivo',
         'Data source': 'Origem dos dados',
         'Observatory — the whole corpus, charted →': 'Observatório — todo o corpus em gráficos →',
+        'This product uses data from the NVD API but is not endorsed or certified by the NVD.': 'Este produto usa dados da API da NVD, mas não é endossado nem certificado pela NVD.',
         // The mode switch in the results header (eager: it is on the List page).
         'Mode': 'Modo',
         'List': 'Lista',
@@ -659,6 +661,7 @@ const I18N = {
         'Data: local snapshot %1 + NVD live': 'データ: ローカルスナップショット %1 ＋ NVDライブ',
         'Data source': 'データの出所',
         'Observatory — the whole corpus, charted →': '観測所 — コーパス全体をグラフで →',
+        'This product uses data from the NVD API but is not endorsed or certified by the NVD.': '本製品は NVD API のデータを使用していますが、NVD による推奨または認定を受けたものではありません。',
         // The mode switch in the results header (eager: it is on the List page).
         'Mode': '表示モード',
         'List': '一覧',
@@ -952,6 +955,7 @@ const I18N = {
         'Data: local snapshot %1 + NVD live': 'Данные: локальный снимок %1 + NVD в реальном времени',
         'Data source': 'Источник данных',
         'Observatory — the whole corpus, charted →': 'Обсерватория — весь корпус в графиках →',
+        'This product uses data from the NVD API but is not endorsed or certified by the NVD.': 'Этот продукт использует данные NVD API, но не одобрен и не сертифицирован NVD.',
         // The mode switch in the results header (eager: it is on the List page).
         'Mode': 'Режим',
         'List': 'Список',
