@@ -29,357 +29,7 @@
     <!-- /carino:head -->
     <link rel="stylesheet" href="fonts/carino-fonts.css">
     <link rel="stylesheet" href="carino-ui.css">
-    <style>
-        /* Fleet tokens come from carino-ui.css. The results column used to be
-           a light "document"; it is on the fleet's dark ground now, like the
-           rail, the dialogs and the dashboards, so one gold (--accent) serves
-           every surface. --cve-hair is CVE's own hairline. */
-        :root { --cve-hair: #1a1a1a; }
-
-        body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
-
-        .main-wrapper { display: flex; flex: 1; overflow: hidden; }
-
-        /* --- Sidebar Controls — Carino chrome (gold-on-black) --- */
-        .controls {
-            width: 320px; background: var(--bg-card); color: var(--text-sec);
-            padding: 25px; border-right: 1px solid var(--border);
-            display: flex; flex-direction: column; gap: 20px; overflow-y: auto; flex-shrink: 0;
-        }
-
-        .control-group { display: flex; flex-direction: column; gap: 6px; }
-        .control-group label {
-            font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; font-weight: 700;
-            color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;
-        }
-
-        input, select { padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; background: var(--bg-elev); color: var(--text); width: 100%; box-sizing: border-box; transition: border-color 0.2s; }
-        input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(234,179,8,0.12); }
-        input::placeholder { color: var(--text-muted); }
-        select option { background: #111; color: #f5f5f5; }
-
-        .controls input, .controls select { font-family: var(--mono); font-size: 0.85rem; }
-
-        button.search-btn { padding: 12px; background-color: var(--accent); color: #050505; border: none; cursor: pointer; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.8rem; margin-top: 10px; transition: 0.2s; }
-        button.search-btn:hover { background-color: #fbbf24; box-shadow: 0 4px 14px rgba(234,179,8,0.22); }
-
-        /* Quick Links (Tags) */
-        .quick-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
-        .tag { background: var(--bg-elev); color: var(--text-sec); padding: 5px 10px; border-radius: 15px; font-size: 0.8rem; font-weight: 500; text-decoration: none; cursor: pointer; border: 1px solid var(--border); transition: all 0.2s; }
-        .tag:hover { background: rgba(234,179,8,0.08); color: #eab308; border-color: #eab308; }
-
-        /* --- Results Area --- */
-        /* The gutter is kept whether or not the column scrolls, so a dashboard
-           prepared behind a short list is drawn at the width it is shown at. */
-        .results-area { flex: 1; padding: 0 30px 30px 30px; overflow-y: auto; scrollbar-gutter: stable; position: relative; background-color: var(--bg); }
-        
-        .results-header { position: sticky; top: 0; background: var(--bg); padding: 20px 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
-        .results-count { font-weight: 600; color: var(--text); }
-        .rh-left { display: flex; align-items: center; gap: 12px; }
-        .api-status { font-size: .78rem; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; }
-        
-        .sort-control { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
-        .sort-control select { width: auto; padding: 6px 30px 6px 10px; font-size: 0.9rem; }
-
-        /* CVE Card Design */
-        .cve-item { background-color: var(--bg-card); padding: 20px; margin-bottom: 15px; border-radius: 10px; border: 1px solid var(--border); border-left: 5px solid #3a3a3a; display: grid; grid-template-columns: 1fr auto; gap: 20px; transition: transform 0.2s, border-color 0.2s; }
-        .cve-item:hover { transform: translateY(-2px); border-top-color: #3a3a3a; border-right-color: #3a3a3a; border-bottom-color: #3a3a3a; }
-        
-        .cve-header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-        .cve-id { font-size: 1.15rem; font-weight: 700; color: var(--accent); text-decoration: none; }
-        .cve-id:hover { text-decoration: underline; }
-        
-        .badge { padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-        .badge-status { background: var(--bg-elev); color: var(--text-sec); border: 1px solid var(--border); }
-
-        /* KEV is 0.44% of all CVEs, so this badge is rare by construction and
-           can afford to be found from across the page. Red on a pale ground
-           rather than a solid red block: the card must not become an alarm,
-           because the score box beside it is already carrying the severity. */
-        .badge-kev { background: rgba(239,68,68,0.08); color: #fca5a5; border: 1px solid rgba(239,68,68,0.5); }
-        /* The ransomware marker is the one thing here that outranks the score,
-           so it is the one thing that inverts. About a third of KEV carries it. */
-        .badge-ransom { background: #7f1d1d; color: #fee2e2; border: 1px solid #7f1d1d; }
-
-        .cve-desc { font-size: 0.95rem; line-height: 1.6; color: var(--text-sec); margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-        .cve-desc.expanded { -webkit-line-clamp: unset; }
-        
-        .cve-meta { font-size: 0.85rem; color: var(--text-muted); margin-top: 12px; display: flex; gap: 20px; }
-        .meta-item { display: flex; align-items: center; gap: 5px; }
-
-        /* Score Box */
-        .score-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 90px; padding: 0 0 0 20px; border-left: 1px solid var(--border); }
-        .score-val { font-size: 2rem; font-weight: 800; line-height: 1; }
-        .score-lbl { font-size: 0.75rem; font-weight: 700; margin-top: 5px; text-transform: uppercase; }
-
-        /* Dynamic Colors */
-        .low { border-left-color: #22c55e; } .low .score-val { color: #22c55e; }
-        .medium { border-left-color: #eab308; } .medium .score-val { color: #eab308; }
-        .high { border-left-color: #f97316; } .high .score-val { color: #f97316; }
-        .critical { border-left-color: #ef4444; } .critical .score-val { color: #ef4444; }
-        .pending { border-left-color: #525252; } .pending .score-val { color: var(--text-muted); font-size: 1.5rem; }
-
-        /* Loader: a dark scrim over the empty column (.spinner is Branding's). */
-        .loader-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(5,5,5,0.82); display: none; justify-content: center; align-items: center; z-index: 50; }
-        .loader-overlay .spinner { width: 36px; height: 36px; }
-
-        /* Navbar controls (moved in by carino-navbar.js). The filters button
-           opens the rail as a drawer, so it exists only where the rail is one. */
-        body > .cve-actions { display: none; }
-        #cveMenuBtn { display: none; font-size: var(--fs-sm); }
-        #cveScrim { display: none; }
-
-        @media (max-width: 640px) {
-            #carinoNav #srcChip .chip-src { display: none; }
-            /* still the button's name, just not drawn */
-            #carinoNav #cveMenuBtn .mb-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-        }
-        @media (max-width: 900px) {
-            #carinoNav #cveMenuBtn { display: inline-flex; }
-
-            /* The filter rail becomes an off-canvas drawer under the 60px navbar. */
-            .controls {
-                position: fixed; top: 60px; left: 0; bottom: 0;
-                width: min(88vw, 340px); z-index: 2147482000;
-                transform: translateX(-100%); transition: transform 0.25s ease;
-                box-shadow: 0 0 44px rgba(0, 0, 0, 0.6);
-            }
-            .controls.open { transform: translateX(0); }
-
-            #cveScrim {
-                display: block; position: fixed; inset: 60px 0 0 0;
-                background: rgba(0, 0, 0, 0.55); opacity: 0; pointer-events: none;
-                transition: opacity 0.25s ease; z-index: 2147481000;
-            }
-            #cveScrim.open { opacity: 1; pointer-events: auto; }
-
-            .results-area { padding: 15px; }
-            .results-header { flex-wrap: wrap; gap: 10px; }
-            .rh-right { flex-wrap: wrap; }
-            .cve-item { grid-template-columns: 1fr; gap: 10px; }
-            .score-box { flex-direction: row; border-left: none; border-top: 1px solid var(--border); padding: 10px 0 0 0; justify-content: flex-start; gap: 10px; }
-            .score-val { font-size: 1.5rem; }
-        }
-
-        /* --- Additions: honest counts, real affordances, keyboard access --- */
-
-        .hint { margin: 6px 0 0; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; line-height: 1.5; color: var(--text-muted); }
-
-        /* Provenance: where the data came from and when. Pinned to the bottom
-           of the rail — a number without a retrieval time is a rumour. */
-        .prov { display: block; width: 100%; margin-top: auto; padding: 16px 0 0; background: none; border: none; border-top: 1px solid var(--cve-hair); font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: var(--text-muted); text-align: left; cursor: pointer; }
-        .prov:hover { color: #eab308; }
-        .prov:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-        /* A link, not a control: the rail still gains no settings (§6). */
-        .prov-link { display: block; padding-top: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: var(--text-muted); text-decoration: none; }
-        .prov-link:hover, .prov-link:focus-visible { color: #eab308; }
-        .controls .data-foot { margin: 10px 0 0; padding-bottom: 0; border-top-color: var(--cve-hair); }
-        .coverage { padding: 3px 8px; border: 1px solid rgba(234,179,8,0.45); border-radius: 5px; background: rgba(234,179,8,0.08); color: #fcd34d; font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; }
-        .coverage:empty { display: none; }
-
-        /* KEV and EPSS filter what is already loaded, so they belong beside the
-           severity floor rather than in a group of their own: one compact row
-           inside an existing group, and the rail keeps its height. */
-        .sev-extra { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-        .sev-extra label { margin: 0; }
-        .sev-extra .chk { display: flex; align-items: center; gap: 6px; color: var(--text-sec); cursor: pointer; }
-        .controls .sev-extra input[type="checkbox"] { width: auto; margin: 0; padding: 0; accent-color: #eab308; cursor: pointer; }
-        .sev-extra .epss-lbl { margin-left: auto; }
-        .controls .sev-extra select { width: auto; padding: 5px 6px; font-size: 0.72rem; }
-        .sev-extra input:disabled, .sev-extra select:disabled { opacity: 0.45; cursor: not-allowed; }
-        .sev-extra .chk:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
-
-        /* Quick tags are <button> now, so they are reachable by keyboard. */
-        button.tag { font-family: inherit; }
-        button.tag:focus-visible, .btn-ghost:focus-visible, .desc-toggle:focus-visible,
-        .load-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-        .rh-right { display: flex; align-items: center; gap: 10px; }
-        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-sec); font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 5px 9px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
-        .btn-ghost:hover { border-color: var(--accent); color: var(--accent); background: transparent; }
-        .btn-copy { margin-left: auto; }
-
-        .desc-toggle { margin-top: 8px; padding: 0; background: none; border: none; color: var(--accent); font-family: inherit; font-size: 0.8rem; cursor: pointer; }
-        .desc-toggle:hover { text-decoration: underline; }
-
-        .cve-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-        .chip { display: inline-block; padding: 3px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-elev); color: var(--text-sec); font-size: 0.7rem; text-decoration: none; }
-        .chip.mono { font-family: 'IBM Plex Mono', monospace; }
-        a.chip:hover { border-color: var(--accent); color: var(--accent); }
-        /* EPSS is a probability, not a verdict, so it stays a neutral chip
-           until it crosses the half — where amber is the same "read this"
-           the coverage note uses, and still not the KEV red. */
-        .chip-epss.hot { border-color: rgba(234,179,8,0.45); background: rgba(234,179,8,0.08); color: #fcd34d; }
-
-        .load-more { display: block; width: 100%; margin: 5px 0 30px; padding: 14px; background: var(--bg-card); border: 1px dashed var(--border); border-radius: 8px; color: var(--text-sec); font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; cursor: pointer; transition: 0.2s; }
-        .load-more:hover { border-color: var(--accent); color: var(--accent); }
-
-        .empty { padding: 40px; text-align: center; color: var(--text-muted); }
-        /* A failed search is an error with a Retry, never an empty list. */
-        #resultsList > .alert.err { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
-        #resultsList > .alert.err p { margin: 4px 0 0; color: var(--text-sec); }
-
-        /* --- Quick-views dialog. --- */
-        .qv-more { font-weight: 700; letter-spacing: 0.1em; }
-        .qv-dialog { width: min(560px, 92vw); max-height: 84vh; padding: 0; border: 1px solid #262626; border-radius: 12px; background: #0b0b0b; color: #a3a3a3; }
-        .qv-dialog::backdrop { background: rgba(0,0,0,0.6); backdrop-filter: blur(2px); }
-        .qv-inner { display: flex; flex-direction: column; gap: 14px; max-height: 84vh; padding: 22px; }
-        .qv-head { display: flex; align-items: center; gap: 12px; }
-        .qv-head h2 { margin: 0; font-family: 'Red Hat Display', 'IBM Plex Sans', sans-serif; font-size: 1.2rem; color: #f5f5f5; }
-        .qv-x { margin-left: auto; width: 30px; height: 30px; background: transparent; border: 1px solid #262626; border-radius: 6px; color: #a3a3a3; font-size: 1.1rem; line-height: 1; cursor: pointer; }
-        .qv-x:hover { border-color: #eab308; color: #eab308; }
-        .qv-sub { margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; line-height: 1.7; color: #666; }
-        .qv-row-form { display: flex; gap: 8px; }
-        .qv-row-form input { flex: 1; }
-        .qv-dialog input { padding: 10px 12px; background: #0d0d0d; border: 1px solid #262626; border-radius: 6px; color: #f5f5f5; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; width: 100%; box-sizing: border-box; }
-        .qv-dialog input::placeholder { color: #555; }
-        .qv-dialog input:focus { outline: none; border-color: #eab308; box-shadow: 0 0 0 3px rgba(234,179,8,0.12); }
-        .qv-dialog .btn-ghost { border-color: #262626; color: #a3a3a3; white-space: nowrap; }
-        .qv-dialog .btn-ghost:hover { border-color: #eab308; color: #eab308; }
-        .qv-list { flex: 1; overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
-        .qv-group { margin: 14px 0 4px; font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: #555; }
-        .qv-group:first-child { margin-top: 0; }
-        .qv-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid transparent; border-radius: 8px; }
-        .qv-item:hover { background: rgba(234,179,8,0.06); border-color: #262626; }
-        .qv-go { flex: 1; min-width: 0; padding: 0; background: none; border: none; text-align: left; color: #f5f5f5; font-family: inherit; font-size: 0.88rem; cursor: pointer; }
-        .qv-go small { display: block; margin-top: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .qv-act { padding: 2px 5px; background: none; border: none; color: #555; font-size: 0.95rem; line-height: 1; cursor: pointer; }
-        .qv-act:hover, .qv-act.on { color: #eab308; }
-        .qv-none { margin: 20px 0; text-align: center; font-size: 0.82rem; color: #555; }
-        .qv-foot { display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid #1a1a1a; }
-        .qv-note { font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; line-height: 1.5; color: #555; }
-        .qv-dialog .btn-ghost:focus-visible, .qv-x:focus-visible, .qv-go:focus-visible,
-        .qv-act:focus-visible { outline: 2px solid #eab308; outline-offset: 2px; }
-
-        /* --- Modes: List · Trends · Projection · Observatory (js/cve-modes.js).
-               The switch sits on the header and stays there in every mode. --- */
-        .mode-seg { display: inline-flex; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-card); }
-        .mode-seg .seg-btn { position: relative; height: 30px; padding: 0 12px; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-sec); font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; cursor: pointer; transition: color 0.2s; }
-        .mode-seg .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
-        .mode-seg .seg-btn:hover:not([disabled]) { color: var(--accent); }
-        .mode-seg .seg-btn .lbl-s { display: none; }
-        /* A mode that is still being prepared: dimmed, not clickable, and a
-           bar along its foot fills as the pieces are done (--p, 0–1). */
-        .mode-seg .seg-btn[disabled] { cursor: progress; opacity: 0.6; }
-        .mode-seg .seg-btn.is-busy::before,
-        .mode-seg .seg-btn.is-busy::after { content: ''; position: absolute; left: 0; bottom: 0; height: 2px; pointer-events: none; }
-        .mode-seg .seg-btn.is-busy::before { right: 0; background: var(--border); }
-        .mode-seg .seg-btn.is-busy::after { width: calc(var(--p, 0) * 100%); min-width: 12%; background: var(--accent); transition: width 0.3s; animation: seg-pulse 1.2s ease-in-out infinite; }
-        @keyframes seg-pulse { 50% { opacity: 0.35; } }
-        @media (prefers-reduced-motion: reduce) { .mode-seg .seg-btn.is-busy::after { animation: none; transition: none; } }
-        .results-area.is-obs .mode-seg .seg-btn.is-busy::before { background: #262626; }
-        .mode-seg .seg-btn.is-failed { text-decoration: line-through; text-decoration-color: #ef4444; }
-        /* "Trends will open when it has loaded": a deep link (or a click on
-           the rail) waiting. It floats under the switch rather than taking a
-           place in the header's row: shown or hidden over a list already on
-           screen, it must not squeeze the result count or push the cards. */
-        .rh-left { position: relative; }
-        .mode-note { position: absolute; left: 0; top: calc(100% + 6px); z-index: 6; width: max-content; max-width: 100%; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; line-height: 1.4; color: var(--text-sec); }
-        /* Said to a screen reader, not shown: a mode that has become ready. */
-        .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-        .mode-note[hidden] { display: none; }
-        .mode-note .mn-x { padding: 0 4px; background: none; border: none; color: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer; }
-        .mode-note .mn-x:hover { color: var(--accent); }
-        /* Where a mode is built before it can be opened, and where it stays:
-           in #obsRoot, in the column, so it has the column's width. A box
-           being built ([data-staging], also inert and aria-hidden) and the
-           whole of #obsRoot while the list shows have no height and are
-           clipped, so they cost the list neither space nor paint, but they
-           are laid out, once, in the background. max-height (not height)
-           and overflow: clip (not hidden) leave what is inside laid out
-           exactly as it will be shown, and no inherited property
-           (pointer-events, visibility) changes with these states: either
-           would make the first opening lay out or restyle the whole mode.
-           A built mode that is not on screen is skipped with
-           content-visibility, which keeps that layout, so opening it is a
-           paint (display: none threw the layout away: 100-180 ms at 4x
-           CPU). Nothing is moved once built: a moved box is laid out again. */
-        /* !important: carino-ui.css makes [hidden] display:none !important,
-           and these boxes must stay laid out while hidden. */
-        #obsRoot[hidden], #obsRoot > [data-staging] { display: block !important; max-height: 0; overflow: hidden; overflow: clip; }
-        #obsTrends[hidden], #obsProj[hidden], #obsCorpus[hidden] { display: block !important; content-visibility: hidden; contain-intrinsic-size: none; height: 0; }
-        /* A browser without content-visibility (Safari before 18) would
-           paint a zero-height mode over the page: it hides it as before. */
-        @supports not (content-visibility: hidden) {
-            #obsTrends[hidden], #obsProj[hidden], #obsCorpus[hidden], .is-obs #resultsList { display: none !important; }
-        }
-        #obsRoot[hidden] > #obsBanner, #obsRoot[hidden] > .o-loading, #obsRoot[hidden] > .o-errview { display: none; }
-        .mode-seg .seg-btn[aria-pressed="true"] { color: var(--accent); font-weight: 700; border-bottom-color: var(--accent); }
-        .mode-seg .seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-        .results-area.is-obs { background: #050505; }
-        .results-area.is-obs .results-header { background: #050505; border-color: #262626; }
-        .results-area.is-obs .mode-seg { background: #0b0b0b; border-color: #262626; }
-        .results-area.is-obs .mode-seg .seg-btn { color: #a3a3a3; }
-        .results-area.is-obs .mode-seg .seg-btn + .seg-btn { border-left-color: #262626; }
-        .results-area.is-obs .mode-seg .seg-btn:hover,
-        .results-area.is-obs .mode-seg .seg-btn[aria-pressed="true"] { color: #eab308; }
-        .results-area.is-obs .mode-seg .seg-btn:focus-visible { outline-color: #eab308; }
-        /* In the list the header keeps its one row wherever the switch and
-           the count fit in a 460px left half, as before the switch had a
-           fourth button: the switch takes its width from the result count,
-           which wraps inside its half as it always could. The flex-basis is
-           what decides the break — without it the halves would wrap at their
-           unwrapped width, a whole sticky row for a few pixels. Below that (a
-           small laptop) the sort controls take a row of their own, still on
-           the right, rather than squeeze the count into a column of single
-           words. The dashboards' chip bar (#obsHeader) is always a row of
-           its own. */
-        .results-header { flex-wrap: wrap; row-gap: 10px; column-gap: 12px; }
-        .rh-left { flex: 1 1 460px; container: rhleft / inline-size; }
-        /* Where the left half is narrower than the four full names and the
-           count, coverage and status on one line, the two long names are
-           abbreviated (the full name is still what is read out) and the
-           buttons close up, so the count keeps its room. */
-        @container rhleft (max-width: 699px) {
-            .mode-seg .seg-btn { padding: 0 8px; letter-spacing: 0.03em; }
-            .mode-seg .seg-btn .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-            .mode-seg .seg-btn .lbl-s { display: inline; }
-        }
-        @container rhleft (max-width: 599px) {
-            .mode-seg .seg-btn { padding: 0 4px; letter-spacing: 0; }
-        }
-        .rh-right { margin-left: auto; }
-        /* The list's own loader belongs to the list: a search still running
-           behind a chart must not grey the chart out. */
-        .is-obs #loader { display: none !important; }
-        .rh-obs { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-        .rh-obs[hidden] { display: none; }
-        .rh-left { min-width: 0; }
-        #obsRoot { color: #a3a3a3; }
-        #obsRoot > .o-loading { padding: 40px 0; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: #666; }
-        .is-obs #loadMoreWrap,
-        .is-obs .rh-left > .list-only, .is-obs .rh-right { display: none; }
-        /* The cards are skipped, not removed: content-visibility keeps their
-           layout, so going back to a list of a few thousand cards is one
-           paint instead of laying every card out again (display: none
-           threw that layout away: ~370 ms at 1x for a 90-day list). */
-        .is-obs #resultsList { content-visibility: hidden; contain-intrinsic-size: none; height: 0; overflow: hidden; }
-        @media (max-width: 900px) {
-            /* The column's 15px top padding would leave a strip above the
-               sticky header for scrolled charts to show through; the
-               dashboards' header sticks to the very top and is slimmer. */
-            .results-area.is-obs .results-header { top: -15px; padding: 10px 0; margin-bottom: 12px; row-gap: 8px; }
-            /* On a phone the switch is a full-width row above the count, and
-               the count, coverage and status share the next row as before. */
-            .rh-left { flex-wrap: wrap; row-gap: 8px; }
-            .mode-seg .seg-btn { height: 44px; }
-            /* Over the count's row, just under the switch (44 px + the
-               8 px gap): over text, not over the sort control below. */
-            .mode-note { top: 52px; }
-            .results-count { flex: 1 1 0; min-width: 8em; }
-        }
-        @media (max-width: 560px) {
-            .mode-seg { flex: 1 1 100%; }
-            .mode-seg .seg-btn { flex: 1 1 0; min-width: 0; padding: 0 6px; }
-        }
-        /* Four buttons in 290px: the two long names are abbreviated (the full
-           name is still what is read out), the letters close up. */
-        @media (max-width: 420px) {
-            .mode-seg .seg-btn { padding: 0 3px; font-size: 0.6rem; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
-            .mode-seg .seg-btn .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-            .mode-seg .seg-btn .lbl-s { display: inline; }
-        }
-    </style>
+    <link rel="stylesheet" href="css/cve.css">
 </head>
 <body>
 
@@ -992,14 +642,14 @@ function card(c) {
             '<div class="cve-header-row">' +
                 '<a class="cve-id" target="_blank" rel="noopener" href="https://nvd.nist.gov/vuln/detail/' +
                     encodeURIComponent(c.id) + '">' + esc(c.id) + '</a>' +
-                '<span class="badge badge-status">' + esc(c.vulnStatus || '—') + '</span>' +
+                '<span class="pill muted">' + esc(c.vulnStatus || '—') + '</span>' +
                 // Exploited in the wild outranks everything else on the card,
                 // so it sits immediately after the status and before the fold.
                 (kev
-                    ? '<span class="badge badge-kev" title="' + esc(kevTitle(kev)) + '">' +
+                    ? '<span class="pill err" title="' + esc(kevTitle(kev)) + '">' +
                         esc(tf('KEV · %1', kev.added || '—')) + '</span>' +
                       (kev.ransomware
-                        ? '<span class="badge badge-ransom" title="' +
+                        ? '<span class="pill cve-ransom" title="' +
                             esc(t_('Known to have been used in ransomware campaigns.')) + '">' +
                             esc(t_('Ransomware')) + '</span>'
                         : '')
@@ -1014,15 +664,15 @@ function card(c) {
                 : '') +
             (m || cwes.length || epss
                 ? '<div class="cve-tags">' +
-                    (m ? '<span class="chip">CVSS ' + esc(m.v) + ' · ' + esc(m.src) + '</span>' : '') +
+                    (m ? '<span class="pill muted">CVSS ' + esc(m.v) + ' · ' + esc(m.src) + '</span>' : '') +
                     (epss
-                        ? '<span class="chip mono chip-epss' + (epss.score >= 0.5 ? ' hot' : '') +
+                        ? '<span class="pill ' + (epss.score >= 0.5 ? 'warn' : 'muted') +
                             '" title="' + esc(epssTitle(epss, enrichReady().date)) + '">' +
                             esc(tf('EPSS %1 · %2th', epss.score.toFixed(3), (epss.percentile * 100).toFixed(1))) +
                           '</span>'
                         : '') +
-                    (vector ? '<span class="chip mono">' + esc(vector) + '</span>' : '') +
-                    cwes.map((w) => '<a class="chip" target="_blank" rel="noopener" href="https://cwe.mitre.org/data/definitions/' +
+                    (vector ? '<span class="pill muted">' + esc(vector) + '</span>' : '') +
+                    cwes.map((w) => '<a class="pill muted" target="_blank" rel="noopener" href="https://cwe.mitre.org/data/definitions/' +
                         encodeURIComponent(w.slice(4)) + '.html">' + esc(w) + '</a>').join('') +
                   '</div>'
                 : '') +
@@ -1762,7 +1412,7 @@ function renderChips() {
     pinnedViews().forEach((v) => {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'tag';
+        b.className = 'fchip';
         b.textContent = t_(v.label);
         b.title = viewSummary(v);
         b.addEventListener('click', () => applyView(v));
@@ -1770,7 +1420,7 @@ function renderChips() {
     });
     const more = document.createElement('button');
     more.type = 'button';
-    more.className = 'tag qv-more';
+    more.className = 'fchip qv-more';
     more.textContent = '⋯';
     more.title = t_('All quick views');
     more.setAttribute('aria-label', t_('All quick views'));
@@ -2166,7 +1816,7 @@ window.cveApplyListFilters = function (f) {
     scrim.addEventListener('click', close);
     window.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
     controls.addEventListener('click', function (e) {
-        if (MQ.matches && e.target.closest('.tag, .search-btn, #obsLink')) close();
+        if (MQ.matches && e.target.closest('.fchip, .search-btn, #obsLink')) close();
     });
     var onChange = function () { if (!MQ.matches) close(); };
     if (MQ.addEventListener) MQ.addEventListener('change', onChange);
