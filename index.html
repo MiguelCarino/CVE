@@ -28,62 +28,44 @@
     <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebApplication", "name": "CVE Database", "url": "https://cve.carino.systems/", "description": "Search CVE security vulnerabilities from the NIST NVD — CVSS scores, filters and trends, fast and offline-capable, in your browser.", "operatingSystem": "Any (runs in a web browser)", "isAccessibleForFree": true, "author": {"@type": "Person", "name": "Miguel Cariño", "url": "https://carino.systems/"}}</script>
     <!-- /carino:head -->
     <link rel="stylesheet" href="fonts/carino-fonts.css">
+    <link rel="stylesheet" href="carino-ui.css">
     <style>
-        /* Two golds, and on purpose. --primary is the gold that stays legible
-           as text on the light results column (it is where Branding's
-           --gold-text gradient ends); --accent is Branding's Sharp Gold and
-           belongs only on the dark rail. Focus rings now match the surface
-           they sit on instead of mixing the two. */
-        :root {
-            --primary: #b45309;
-            --accent: #eab308;
-            --bg: #f8fafc;
-            --surface: #ffffff;
-            --text: #334155;
-            --text-light: #64748b;
-            --border: #e2e8f0;
-        }
+        /* Fleet tokens come from carino-ui.css. The results column used to be
+           a light "document"; it is on the fleet's dark ground now, like the
+           rail, the dialogs and the dashboards, so one gold (--accent) serves
+           every surface. --cve-hair is CVE's own hairline. */
+        :root { --cve-hair: #1a1a1a; }
 
-        body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
+        body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
 
         .main-wrapper { display: flex; flex: 1; overflow: hidden; }
 
-        /* --- Sidebar Controls — Carino chrome (gold-on-black) ---
-           The results area stays light (it is the readable "document"); only the
-           filter rail adopts the fleet's dark palette, matching netplan/topo. */
+        /* --- Sidebar Controls — Carino chrome (gold-on-black) --- */
         .controls {
-            width: 320px; background: #0b0b0b; color: #a3a3a3;
-            padding: 25px; border-right: 1px solid #262626;
+            width: 320px; background: var(--bg-card); color: var(--text-sec);
+            padding: 25px; border-right: 1px solid var(--border);
             display: flex; flex-direction: column; gap: 20px; overflow-y: auto; flex-shrink: 0;
         }
 
         .control-group { display: flex; flex-direction: column; gap: 6px; }
         .control-group label {
             font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; font-weight: 700;
-            color: #666; text-transform: uppercase; letter-spacing: 0.08em;
+            color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;
         }
 
-        input, select { padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; background: #fff; width: 100%; box-sizing: border-box; transition: border-color 0.2s; }
-        input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(180,83,9,0.15); }
+        input, select { padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; background: var(--bg-elev); color: var(--text); width: 100%; box-sizing: border-box; transition: border-color 0.2s; }
+        input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(234,179,8,0.12); }
+        input::placeholder { color: var(--text-muted); }
+        select option { background: #111; color: #f5f5f5; }
 
-        /* Dark form controls, scoped to the sidebar so the results sort dropdown
-           keeps its light styling. */
-        .controls input, .controls select {
-            background: #0d0d0d; border: 1px solid #262626; color: #f5f5f5;
-            font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem;
-        }
-        .controls input::placeholder { color: #666; }
-        .controls input:focus, .controls select:focus {
-            border-color: #eab308; box-shadow: 0 0 0 3px rgba(234,179,8,0.12);
-        }
-        .controls select option { background: #111; color: #f5f5f5; }
+        .controls input, .controls select { font-family: var(--mono); font-size: 0.85rem; }
 
-        button.search-btn { padding: 12px; background-color: #eab308; color: #050505; border: none; cursor: pointer; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.8rem; margin-top: 10px; transition: 0.2s; }
+        button.search-btn { padding: 12px; background-color: var(--accent); color: #050505; border: none; cursor: pointer; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.8rem; margin-top: 10px; transition: 0.2s; }
         button.search-btn:hover { background-color: #fbbf24; box-shadow: 0 4px 14px rgba(234,179,8,0.22); }
 
         /* Quick Links (Tags) */
         .quick-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
-        .tag { background: #0d0d0d; color: #a3a3a3; padding: 5px 10px; border-radius: 15px; font-size: 0.8rem; font-weight: 500; text-decoration: none; cursor: pointer; border: 1px solid #262626; transition: all 0.2s; }
+        .tag { background: var(--bg-elev); color: var(--text-sec); padding: 5px 10px; border-radius: 15px; font-size: 0.8rem; font-weight: 500; text-decoration: none; cursor: pointer; border: 1px solid var(--border); transition: all 0.2s; }
         .tag:hover { background: rgba(234,179,8,0.08); color: #eab308; border-color: #eab308; }
 
         /* --- Results Area --- */
@@ -94,35 +76,35 @@
         .results-header { position: sticky; top: 0; background: var(--bg); padding: 20px 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
         .results-count { font-weight: 600; color: var(--text); }
         .rh-left { display: flex; align-items: center; gap: 12px; }
-        .api-status { font-size: .78rem; color: var(--text-light); font-family: 'IBM Plex Mono', monospace; }
+        .api-status { font-size: .78rem; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; }
         
         .sort-control { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
         .sort-control select { width: auto; padding: 6px 30px 6px 10px; font-size: 0.9rem; }
 
         /* CVE Card Design */
-        .cve-item { background-color: var(--surface); padding: 20px; margin-bottom: 15px; border-radius: 10px; border: 1px solid var(--border); border-left: 5px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: grid; grid-template-columns: 1fr auto; gap: 20px; transition: transform 0.2s; }
-        .cve-item:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .cve-item { background-color: var(--bg-card); padding: 20px; margin-bottom: 15px; border-radius: 10px; border: 1px solid var(--border); border-left: 5px solid #3a3a3a; display: grid; grid-template-columns: 1fr auto; gap: 20px; transition: transform 0.2s, border-color 0.2s; }
+        .cve-item:hover { transform: translateY(-2px); border-top-color: #3a3a3a; border-right-color: #3a3a3a; border-bottom-color: #3a3a3a; }
         
         .cve-header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-        .cve-id { font-size: 1.15rem; font-weight: 700; color: var(--primary); text-decoration: none; }
+        .cve-id { font-size: 1.15rem; font-weight: 700; color: var(--accent); text-decoration: none; }
         .cve-id:hover { text-decoration: underline; }
         
         .badge { padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-        .badge-status { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+        .badge-status { background: var(--bg-elev); color: var(--text-sec); border: 1px solid var(--border); }
 
         /* KEV is 0.44% of all CVEs, so this badge is rare by construction and
            can afford to be found from across the page. Red on a pale ground
            rather than a solid red block: the card must not become an alarm,
            because the score box beside it is already carrying the severity. */
-        .badge-kev { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+        .badge-kev { background: rgba(239,68,68,0.08); color: #fca5a5; border: 1px solid rgba(239,68,68,0.5); }
         /* The ransomware marker is the one thing here that outranks the score,
            so it is the one thing that inverts. About a third of KEV carries it. */
         .badge-ransom { background: #7f1d1d; color: #fee2e2; border: 1px solid #7f1d1d; }
 
-        .cve-desc { font-size: 0.95rem; line-height: 1.6; color: var(--text); margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .cve-desc { font-size: 0.95rem; line-height: 1.6; color: var(--text-sec); margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .cve-desc.expanded { -webkit-line-clamp: unset; }
         
-        .cve-meta { font-size: 0.85rem; color: var(--text-light); margin-top: 12px; display: flex; gap: 20px; }
+        .cve-meta { font-size: 0.85rem; color: var(--text-muted); margin-top: 12px; display: flex; gap: 20px; }
         .meta-item { display: flex; align-items: center; gap: 5px; }
 
         /* Score Box */
@@ -131,29 +113,29 @@
         .score-lbl { font-size: 0.75rem; font-weight: 700; margin-top: 5px; text-transform: uppercase; }
 
         /* Dynamic Colors */
-        .low { border-left-color: #22c55e; } .low .score-val { color: #16a34a; }
-        .medium { border-left-color: #eab308; } .medium .score-val { color: #ca8a04; }
-        .high { border-left-color: #f97316; } .high .score-val { color: #ea580c; }
-        .critical { border-left-color: #ef4444; } .critical .score-val { color: #dc2626; }
-        .pending { border-left-color: #94a3b8; background-color: #f8fafc; } .pending .score-val { color: #94a3b8; font-size: 1.5rem; }
+        .low { border-left-color: #22c55e; } .low .score-val { color: #22c55e; }
+        .medium { border-left-color: #eab308; } .medium .score-val { color: #eab308; }
+        .high { border-left-color: #f97316; } .high .score-val { color: #f97316; }
+        .critical { border-left-color: #ef4444; } .critical .score-val { color: #ef4444; }
+        .pending { border-left-color: #525252; } .pending .score-val { color: var(--text-muted); font-size: 1.5rem; }
 
-        /* Loader */
-        .loader-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.8); display: none; justify-content: center; align-items: center; z-index: 50; backdrop-filter: blur(2px); }
-        .spinner { width: 50px; height: 50px; border: 5px solid #e2e8f0; border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        /* Loader: a dark scrim over the empty column (.spinner is Branding's). */
+        .loader-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(5,5,5,0.82); display: none; justify-content: center; align-items: center; z-index: 50; }
+        .loader-overlay .spinner { width: 36px; height: 36px; }
 
-        /* Mobile drawer helpers — hidden until the breakpoint (see inline script). */
-        #cveMenuBtn {
-            display: none; flex-shrink: 0;
-            width: 38px; height: 38px; align-items: center; justify-content: center;
-            background: transparent; border: 1px solid #262626; border-radius: 6px;
-            color: #eab308; font-size: 1.15rem; line-height: 1; cursor: pointer; transition: 0.2s;
-        }
-        #cveMenuBtn:hover { border-color: #eab308; background: rgba(234,179,8,0.08); }
+        /* Navbar controls (moved in by carino-navbar.js). The filters button
+           opens the rail as a drawer, so it exists only where the rail is one. */
+        body > .cve-actions { display: none; }
+        #cveMenuBtn { display: none; font-size: var(--fs-sm); }
         #cveScrim { display: none; }
 
+        @media (max-width: 640px) {
+            #carinoNav #srcChip .chip-src { display: none; }
+            /* still the button's name, just not drawn */
+            #carinoNav #cveMenuBtn .mb-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+        }
         @media (max-width: 900px) {
-            #cveMenuBtn { display: flex; }
+            #carinoNav #cveMenuBtn { display: inline-flex; }
 
             /* The filter rail becomes an off-canvas drawer under the 60px navbar. */
             .controls {
@@ -181,18 +163,18 @@
 
         /* --- Additions: honest counts, real affordances, keyboard access --- */
 
-        .hint { margin: 6px 0 0; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; line-height: 1.5; color: #666; }
+        .hint { margin: 6px 0 0; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; line-height: 1.5; color: var(--text-muted); }
 
         /* Provenance: where the data came from and when. Pinned to the bottom
            of the rail — a number without a retrieval time is a rumour. */
-        .prov { display: block; width: 100%; margin-top: auto; padding: 16px 0 0; background: none; border: none; border-top: 1px solid #1a1a1a; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: #555; text-align: left; cursor: pointer; }
+        .prov { display: block; width: 100%; margin-top: auto; padding: 16px 0 0; background: none; border: none; border-top: 1px solid var(--cve-hair); font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: var(--text-muted); text-align: left; cursor: pointer; }
         .prov:hover { color: #eab308; }
         .prov:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         /* A link, not a control: the rail still gains no settings (§6). */
-        .prov-link { display: block; padding-top: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: #555; text-decoration: none; }
+        .prov-link { display: block; padding-top: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: var(--text-muted); text-decoration: none; }
         .prov-link:hover, .prov-link:focus-visible { color: #eab308; }
-        .nvd-note { margin: 10px 0 0; font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem; line-height: 1.5; color: #555; }
-        .coverage { padding: 3px 8px; border: 1px solid #f59e0b; border-radius: 5px; background: #fffbeb; color: #b45309; font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; }
+        .controls .data-foot { margin: 10px 0 0; padding-bottom: 0; border-top-color: var(--cve-hair); }
+        .coverage { padding: 3px 8px; border: 1px solid rgba(234,179,8,0.45); border-radius: 5px; background: rgba(234,179,8,0.08); color: #fcd34d; font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; }
         .coverage:empty { display: none; }
 
         /* KEV and EPSS filter what is already loaded, so they belong beside the
@@ -200,7 +182,7 @@
            inside an existing group, and the rail keeps its height. */
         .sev-extra { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
         .sev-extra label { margin: 0; }
-        .sev-extra .chk { display: flex; align-items: center; gap: 6px; color: #a3a3a3; cursor: pointer; }
+        .sev-extra .chk { display: flex; align-items: center; gap: 6px; color: var(--text-sec); cursor: pointer; }
         .controls .sev-extra input[type="checkbox"] { width: auto; margin: 0; padding: 0; accent-color: #eab308; cursor: pointer; }
         .sev-extra .epss-lbl { margin-left: auto; }
         .controls .sev-extra select { width: auto; padding: 5px 6px; font-size: 0.72rem; }
@@ -213,30 +195,31 @@
         .load-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
         .rh-right { display: flex; align-items: center; gap: 10px; }
-        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-light); font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 5px 9px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
-        .btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
+        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-sec); font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 5px 9px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        .btn-ghost:hover { border-color: var(--accent); color: var(--accent); background: transparent; }
         .btn-copy { margin-left: auto; }
 
-        .desc-toggle { margin-top: 8px; padding: 0; background: none; border: none; color: var(--primary); font-family: inherit; font-size: 0.8rem; cursor: pointer; }
+        .desc-toggle { margin-top: 8px; padding: 0; background: none; border: none; color: var(--accent); font-family: inherit; font-size: 0.8rem; cursor: pointer; }
         .desc-toggle:hover { text-decoration: underline; }
 
         .cve-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-        .chip { display: inline-block; padding: 3px 8px; border: 1px solid var(--border); border-radius: 5px; background: #f8fafc; color: var(--text-light); font-size: 0.7rem; text-decoration: none; }
+        .chip { display: inline-block; padding: 3px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-elev); color: var(--text-sec); font-size: 0.7rem; text-decoration: none; }
         .chip.mono { font-family: 'IBM Plex Mono', monospace; }
-        a.chip:hover { border-color: var(--primary); color: var(--primary); }
+        a.chip:hover { border-color: var(--accent); color: var(--accent); }
         /* EPSS is a probability, not a verdict, so it stays a neutral chip
            until it crosses the half — where amber is the same "read this"
            the coverage note uses, and still not the KEV red. */
-        .chip-epss.hot { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+        .chip-epss.hot { border-color: rgba(234,179,8,0.45); background: rgba(234,179,8,0.08); color: #fcd34d; }
 
-        .load-more { display: block; width: 100%; margin: 5px 0 30px; padding: 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; color: var(--text-light); font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; cursor: pointer; transition: 0.2s; }
-        .load-more:hover { border-color: var(--primary); color: var(--primary); }
+        .load-more { display: block; width: 100%; margin: 5px 0 30px; padding: 14px; background: var(--bg-card); border: 1px dashed var(--border); border-radius: 8px; color: var(--text-sec); font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; cursor: pointer; transition: 0.2s; }
+        .load-more:hover { border-color: var(--accent); color: var(--accent); }
 
-        .empty { padding: 40px; text-align: center; color: var(--text-light); }
-        .empty.error { color: #ef4444; }
+        .empty { padding: 40px; text-align: center; color: var(--text-muted); }
+        /* A failed search is an error with a Retry, never an empty list. */
+        #resultsList > .alert.err { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+        #resultsList > .alert.err p { margin: 4px 0 0; color: var(--text-sec); }
 
-        /* --- Quick-views dialog. Dark, because it is a control surface like
-               the rail, not part of the readable results document. --- */
+        /* --- Quick-views dialog. --- */
         .qv-more { font-weight: 700; letter-spacing: 0.1em; }
         .qv-dialog { width: min(560px, 92vw); max-height: 84vh; padding: 0; border: 1px solid #262626; border-radius: 12px; background: #0b0b0b; color: #a3a3a3; }
         .qv-dialog::backdrop { background: rgba(0,0,0,0.6); backdrop-filter: blur(2px); }
@@ -269,14 +252,11 @@
         .qv-act:focus-visible { outline: 2px solid #eab308; outline-offset: 2px; }
 
         /* --- Modes: List · Trends · Projection · Observatory (js/cve-modes.js).
-               The switch sits on the light header and stays there in every
-               mode; the other three darken the whole column, because the
-               charts (css/cve-obs.css, loaded behind the list) are drawn for a
-               dark ground, like the rail and the dialogs. --- */
-        .mode-seg { display: inline-flex; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
-        .mode-seg .seg-btn { position: relative; height: 30px; padding: 0 12px; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-light); font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; cursor: pointer; transition: color 0.2s; }
+               The switch sits on the header and stays there in every mode. --- */
+        .mode-seg { display: inline-flex; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-card); }
+        .mode-seg .seg-btn { position: relative; height: 30px; padding: 0 12px; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-sec); font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; cursor: pointer; transition: color 0.2s; }
         .mode-seg .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
-        .mode-seg .seg-btn:hover:not([disabled]) { color: var(--primary); }
+        .mode-seg .seg-btn:hover:not([disabled]) { color: var(--accent); }
         .mode-seg .seg-btn .lbl-s { display: none; }
         /* A mode that is still being prepared: dimmed, not clickable, and a
            bar along its foot fills as the pieces are done (--p, 0–1). */
@@ -294,12 +274,12 @@
            place in the header's row: shown or hidden over a list already on
            screen, it must not squeeze the result count or push the cards. */
         .rh-left { position: relative; }
-        .mode-note { position: absolute; left: 0; top: calc(100% + 6px); z-index: 6; width: max-content; max-width: 100%; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; line-height: 1.4; color: var(--text-light); }
+        .mode-note { position: absolute; left: 0; top: calc(100% + 6px); z-index: 6; width: max-content; max-width: 100%; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; line-height: 1.4; color: var(--text-sec); }
         /* Said to a screen reader, not shown: a mode that has become ready. */
         .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
         .mode-note[hidden] { display: none; }
         .mode-note .mn-x { padding: 0 4px; background: none; border: none; color: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer; }
-        .mode-note .mn-x:hover { color: var(--primary); }
+        .mode-note .mn-x:hover { color: var(--accent); }
         /* Where a mode is built before it can be opened, and where it stays:
            in #obsRoot, in the column, so it has the column's width. A box
            being built ([data-staging], also inert and aria-hidden) and the
@@ -314,16 +294,18 @@
            content-visibility, which keeps that layout, so opening it is a
            paint (display: none threw the layout away: 100-180 ms at 4x
            CPU). Nothing is moved once built: a moved box is laid out again. */
-        #obsRoot[hidden], #obsRoot > [data-staging] { display: block; max-height: 0; overflow: hidden; overflow: clip; }
-        #obsTrends[hidden], #obsProj[hidden], #obsCorpus[hidden] { display: block; content-visibility: hidden; contain-intrinsic-size: none; height: 0; }
+        /* !important: carino-ui.css makes [hidden] display:none !important,
+           and these boxes must stay laid out while hidden. */
+        #obsRoot[hidden], #obsRoot > [data-staging] { display: block !important; max-height: 0; overflow: hidden; overflow: clip; }
+        #obsTrends[hidden], #obsProj[hidden], #obsCorpus[hidden] { display: block !important; content-visibility: hidden; contain-intrinsic-size: none; height: 0; }
         /* A browser without content-visibility (Safari before 18) would
            paint a zero-height mode over the page: it hides it as before. */
         @supports not (content-visibility: hidden) {
-            #obsTrends[hidden], #obsProj[hidden], #obsCorpus[hidden], .is-obs #resultsList { display: none; }
+            #obsTrends[hidden], #obsProj[hidden], #obsCorpus[hidden], .is-obs #resultsList { display: none !important; }
         }
         #obsRoot[hidden] > #obsBanner, #obsRoot[hidden] > .o-loading, #obsRoot[hidden] > .o-errview { display: none; }
-        .mode-seg .seg-btn[aria-pressed="true"] { color: var(--primary); font-weight: 700; border-bottom-color: var(--accent); }
-        .mode-seg .seg-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+        .mode-seg .seg-btn[aria-pressed="true"] { color: var(--accent); font-weight: 700; border-bottom-color: var(--accent); }
+        .mode-seg .seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
         .results-area.is-obs { background: #050505; }
         .results-area.is-obs .results-header { background: #050505; border-color: #262626; }
         .results-area.is-obs .mode-seg { background: #0b0b0b; border-color: #262626; }
@@ -401,8 +383,17 @@
 </head>
 <body>
 
+    <!-- Navbar controls; carino-navbar.js moves them into the shared bar.
+         Source badge, Updated stamp, then the filters button that opens the
+         rail where it is a drawer (900px and below). -->
+    <div class="cve-actions" data-carino-actions>
+        <span class="live-chip" id="srcChip" title="Data source" data-priority="2">LOADING</span>
+        <span class="fresh" id="freshStamp" hidden></span>
+        <button type="button" class="cs-btn" id="cveMenuBtn" aria-controls="filterRail" aria-expanded="false" data-priority="1"><span aria-hidden="true">☰</span> <span class="mb-t" data-i18n>Filters</span></button>
+    </div>
+
     <div class="main-wrapper">
-        <div class="controls">
+        <div class="controls" id="filterRail">
             <!-- Five pinned chips and a "⋯". Everything else is in the dialog,
                  so the catalogue can grow without the sidebar growing. -->
             <div class="control-group">
@@ -466,8 +457,9 @@
 
             <button type="button" class="prov" id="provenance"></button>
             <a class="prov-link" href="#m=obs" id="obsLink" data-i18n>Observatory — the whole corpus, charted →</a>
-            <!-- Wording required by the NVD API terms of use. -->
-            <p class="nvd-note" data-i18n>This product uses data from the NVD API but is not endorsed or certified by the NVD.</p>
+            <!-- The source line. Its last sentence is the wording the NVD API
+                 terms of use require. -->
+            <p class="data-foot"><span data-i18n>Data: NIST NVD (live, or a synced snapshot), CISA KEV and FIRST EPSS.</span> <span data-i18n>Runs in your browser; nothing is uploaded.</span> <span data-i18n>Monitoring only, not advice.</span> <span data-i18n>This product uses data from the NVD API but is not endorsed or certified by the NVD.</span></p>
         </div>
 
         <div class="results-area">
@@ -614,6 +606,8 @@ let floorCount = 0;
 let kevCount = 0;
 let seenIds = new Set();
 let retrievedAt = null;
+// The last search's failure, for the navbar badge; cleared when a search starts.
+let searchError = null;
 // A page opened in Trends or Projection has not searched yet, and a search
 // run while the list is hidden would cost NVD requests nobody sees: the list
 // remembers it owes one and runs it when it is shown.
@@ -1138,6 +1132,53 @@ function renderProvenance() {
     } else {
         prov.textContent = t_('Data source');
     }
+    renderSourceChip();
+}
+
+// The navbar's source badge and Updated stamp (Branding: Freshness). A local
+// snapshot past STALE_DAYS (the data dialog's own threshold) reads STALE, and
+// so does a search NVD could not complete; a failed search reads ERROR, never
+// as an empty list.
+function renderSourceChip() {
+    const chip = document.getElementById('srcChip');
+    const fresh = document.getElementById('freshStamp');
+    if (!chip) return;
+    const staleDays = (window.CveDataUI && CveDataUI.STALE_DAYS) || 7;
+    const snapAt = corpusMeta && corpusMeta.snapshot ? Date.parse(corpusMeta.snapshot) : NaN;
+    // Before any search has answered (a page opened on a dashboard), the
+    // stored snapshot is what the page has, so it is what the badge reports.
+    const local = isFinite(snapAt) && (usedSources.local || (!retrievedAt && !records.length));
+    const days = local ? Math.max(0, Math.floor((Date.now() - snapAt) / 86400000)) : 0;
+    // suffix (source or age) is the part that gives way on a phone.
+    let text, kind = '', title = t_('Data source'), stamp = '', suffix = '';
+    if (searchError) {
+        text = t_('ERROR'); kind = 'err'; title = tf('Could not reach %1.', 'NVD');
+    } else if (local && (days > staleDays || partial)) {
+        text = t_('STALE'); suffix = ' · ' + tf('%1d', days); kind = 'stale';
+        title = partial ? t_('NVD unreachable — local results only') : tf('Local snapshot is %1 days old', fmtNum(days));
+    } else if (local) {
+        text = t_('SNAPSHOT'); suffix = ' · ' + tf('%1d', days); kind = 'live';
+    } else if (retrievedAt) {
+        text = t_('LIVE'); suffix = ' · NVD'; kind = 'live';
+    } else {
+        text = t_('LOADING');
+    }
+    if (local) stamp = t_('Updated') + ' ' + String(corpusMeta.snapshot).slice(0, 10);
+    else if (retrievedAt) stamp = t_('Updated') + ' ' + retrievedAt.toLocaleTimeString('en-GB', { hour12: false });
+    chip.textContent = text;
+    if (suffix) {
+        const sp = document.createElement('span');
+        sp.className = 'chip-src';
+        sp.textContent = suffix;
+        chip.appendChild(sp);
+    }
+    chip.className = 'live-chip' + (kind ? ' ' + kind : '');
+    chip.title = title;
+    if (fresh) {
+        fresh.hidden = !stamp;
+        fresh.textContent = stamp;
+        fresh.className = 'fresh' + (kind === 'err' ? ' err' : kind === 'stale' ? ' stale' : '');
+    }
 }
 
 function renderLoadMore() {
@@ -1195,12 +1236,16 @@ async function withLoader(fn) {
     } catch (err) {
         console.error(err);
         setStatus(t_('API Error'));
-        document.getElementById('resultsList').innerHTML =
-            '<div class="empty error"><h3>' + esc(t_('Connection Error')) + '</h3><p>' +
+        searchError = err || true;
+        renderSourceChip();
+        const list = document.getElementById('resultsList');
+        list.innerHTML =
+            '<div class="alert err"><div><b>' + esc(tf('Could not reach %1.', 'NVD')) + '</b><p>' +
             esc(err && err.status === 403
                 ? t_('NVD is rate-limiting this browser. Wait about a minute and try again.')
                 : t_('Could not retrieve data from NIST. Please wait a moment and try again.')) +
-            '</p></div>';
+            '</p></div><button type="button" class="cs-btn" id="retrySearch">' + esc(t_('Retry')) + '</button></div>';
+        list.querySelector('#retrySearch').addEventListener('click', () => runSearch());
         return false;
     } finally {
         loader.style.display = 'none';
@@ -1212,7 +1257,7 @@ async function runSearch() {
     writeHash();
     streams = buildStreams();
     records = []; shown = []; seenIds = new Set(); retrievedAt = null;
-    partial = false; usedSources = {};
+    partial = false; usedSources = {}; searchError = null;
     // Clear the previous result set without going through renderList(), which
     // would flash "no CVEs in this window" before the first request returns.
     document.getElementById('resultsList').innerHTML = '';
@@ -1270,6 +1315,7 @@ async function refreshCorpusMeta() {
     } catch (e) {
         corpusMeta = null;          // no IndexedDB, or it refused: the plan falls to NVD
     }
+    renderSourceChip();
 }
 
 // A corpus nobody refreshes drifts, and the snapshot tail only papers over the
@@ -2094,48 +2140,34 @@ window.cveApplyListFilters = function (f) {
 <script src="carino-lang.js" defer></script>
 <script src="i18n.js" defer></script>
 <script>
-/* Mobile: turn the filter rail into a ☰ drawer opened from the shared navbar.
-   CVE has no navbar action controls, so the drawer just holds the filters; it
-   auto-closes when a quick-tag or Search is tapped so the results show through.
-   The ☰ is injected into the injected navbar (carino-navbar.js), so this waits
-   for that bar to mount. Same pattern as netplan/topo.carino.systems. */
+/* Mobile: the filter rail becomes a drawer, opened by the Filters button that
+   carino-navbar.js moved into the shared navbar ([data-carino-actions]). It
+   closes when a quick tag, Search or the Observatory link is tapped, so the
+   results show through. */
 (function () {
     'use strict';
     var MQ = window.matchMedia('(max-width: 900px)');
     var controls = document.querySelector('.controls');
-    if (!controls) return;
+    var btn = document.getElementById('cveMenuBtn');
+    if (!controls || !btn) return;
 
     var scrim = document.createElement('div');
     scrim.id = 'cveScrim';
     document.body.appendChild(scrim);
 
-    function open() { controls.classList.add('open'); scrim.classList.add('open'); }
-    function close() { controls.classList.remove('open'); scrim.classList.remove('open'); }
-    function toggle() { controls.classList.contains('open') ? close() : open(); }
+    function set(on) {
+        controls.classList.toggle('open', on);
+        scrim.classList.toggle('open', on);
+        btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    }
+    function close() { set(false); }
 
+    btn.addEventListener('click', function (e) { e.stopPropagation(); set(!controls.classList.contains('open')); });
     scrim.addEventListener('click', close);
     window.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
-    // Running a search from inside the drawer should reveal the results behind it.
     controls.addEventListener('click', function (e) {
         if (MQ.matches && e.target.closest('.tag, .search-btn, #obsLink')) close();
     });
-
-    function addBtn() {
-        var nav = document.getElementById('carinoNav');
-        if (!nav) return false;
-        if (document.getElementById('cveMenuBtn')) return true;
-        var b = document.createElement('button');
-        b.id = 'cveMenuBtn'; b.type = 'button';
-        b.setAttribute('aria-label', 'Toggle filters');
-        b.textContent = '☰';
-        b.addEventListener('click', function (e) { e.stopPropagation(); toggle(); });
-        var left = nav.querySelector('.cn-left');
-        if (left) left.insertBefore(b, left.firstChild); else nav.insertBefore(b, nav.firstChild);
-        return true;
-    }
-    if (!addBtn()) {
-        var n = 0, iv = setInterval(function () { if (addBtn() || ++n > 40) clearInterval(iv); }, 50);
-    }
     var onChange = function () { if (!MQ.matches) close(); };
     if (MQ.addEventListener) MQ.addEventListener('change', onChange);
     else if (MQ.addListener) MQ.addListener(onChange);
