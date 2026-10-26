@@ -290,7 +290,10 @@ function nvdDate(s) {
 // the same CVE, two dates, depending on which source answered. The severity
 // floor and the date window already work in UTC days, so this is the day the
 // rest of the page means.
-const fmtDate = (s) => { const d = nvdDate(s); return d ? d.toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'; };
+// Dates follow the page language when it is not English (so ja reads
+// 2026/7/30, not 7/30/2026); in English the browser's own format stays.
+const pageLocale = () => { const l = document.documentElement.lang; return l && l !== 'en' ? l : undefined; };
+const fmtDate = (s) => { const d = nvdDate(s); return d ? d.toLocaleDateString(pageLocale(), { timeZone: 'UTC' }) : '—'; };
 const fmtNum = (n) => Number(n || 0).toLocaleString();
 const isoParam = (d) => d.toISOString().slice(0, 19) + '.000';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -683,7 +686,7 @@ function card(c) {
         '</div>' +
         '<div class="score-box">' +
             '<span class="score-val">' + (unrated || score === null ? '--' : esc(score)) + '</span>' +
-            '<span class="score-lbl">' + esc(unrated ? t_('PENDING') : (sev || '')) + '</span>' +
+            '<span class="score-lbl">' + esc(unrated ? t_('PENDING') : (sev ? t_(sev) : '')) + '</span>' +
         '</div>';
     return div;
 }
@@ -778,7 +781,7 @@ function renderProvenance() {
             ? tf('Data: local snapshot %1 + NVD live', snap)
             : tf('Data: local snapshot %1', snap);
     } else if (retrievedAt) {
-        prov.textContent = tf('Data: NVD — retrieved %1', retrievedAt.toLocaleString());
+        prov.textContent = tf('Data: NVD — retrieved %1', retrievedAt.toLocaleString(pageLocale()));
     } else {
         prov.textContent = t_('Data source');
     }

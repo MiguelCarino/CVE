@@ -3,14 +3,22 @@
 // from carino-lang.js (window.CarinoLang.current); this script is deferred and
 // placed after it, so CarinoLang exists by DOMContentLoaded. Reacts to the
 // fleet 'carino:langchange' event. Quick-search tags (product names), CVE data
-// and the "CVE Radar Pro" app name stay English on purpose; the API status
-// line is translated and re-mapped on switch (see applyStatusI18n).
+// and the "CVE Radar Pro" app name stay English on purpose (the severity word
+// on a result card is the exception: CRITICAL…NONE are keys here); the API
+// status line is translated and re-mapped on switch (see applyStatusI18n).
 //
 // Strings containing %1/%2/%3 are filled by tf() in index.html. Keep the
 // placeholders, and keep them in an order that reads naturally in the locale.
 
 const I18N = {
     es: {
+        // navbar More; CVSS severity on a result card (NVD's own baseSeverity value)
+        'More': 'Más',
+        'CRITICAL': 'CRÍTICA',
+        'HIGH': 'ALTA',
+        'MEDIUM': 'MEDIA',
+        'LOW': 'BAJA',
+        'NONE': 'NINGUNA',
         'Late shift.': 'Turno nocturno.',
         'Good morning.': 'Buenos días.',
         'Good afternoon.': 'Buenas tardes.',
@@ -329,6 +337,13 @@ const I18N = {
         'Produced offline from a stored corpus. No account, no telemetry, nothing uploaded — the figures above depend on nothing but the snapshot and hash named in the provenance table.': 'Producido sin conexión a partir de un corpus guardado. Sin cuenta, sin telemetría, sin nada subido: las cifras de arriba no dependen de nada más que de la instantánea y el hash indicados en la tabla de procedencia.',
     },
     'pt-BR': {
+        // navbar More; CVSS severity on a result card (NVD's own baseSeverity value)
+        'More': 'Mais',
+        'CRITICAL': 'CRÍTICA',
+        'HIGH': 'ALTA',
+        'MEDIUM': 'MÉDIA',
+        'LOW': 'BAIXA',
+        'NONE': 'NENHUMA',
         'Late shift.': 'Turno da noite.',
         'Good morning.': 'Bom dia.',
         'Good afternoon.': 'Boa tarde.',
@@ -636,6 +651,13 @@ const I18N = {
         'Produced offline from a stored corpus. No account, no telemetry, nothing uploaded — the figures above depend on nothing but the snapshot and hash named in the provenance table.': 'Produzido offline a partir de um corpus guardado. Sem conta, sem telemetria, nada enviado — os números acima não dependem de nada além do instantâneo e do hash indicados na tabela de procedência.',
     },
     ja: {
+        // navbar More; CVSS severity on a result card (NVD's own baseSeverity value)
+        'More': 'その他',
+        'CRITICAL': '緊急',
+        'HIGH': '高',
+        'MEDIUM': '中',
+        'LOW': '低',
+        'NONE': 'なし',
         'Late shift.': '夜勤お疲れさま。',
         'Good morning.': 'おはようございます。',
         'Good afternoon.': 'こんにちは。',
@@ -944,6 +966,13 @@ const I18N = {
         'Produced offline from a stored corpus. No account, no telemetry, nothing uploaded — the figures above depend on nothing but the snapshot and hash named in the provenance table.': '保存済みコーパスからオフラインで作成しました。アカウントも、テレメトリも、送信も一切ありません。上の数値は、出所の表に記載したスナップショットとハッシュ以外の何にも依存していません。',
     },
     ru: {
+        // navbar More; CVSS severity on a result card (NVD's own baseSeverity value)
+        'More': 'Ещё',
+        'CRITICAL': 'КРИТИЧЕСКАЯ',
+        'HIGH': 'ВЫСОКАЯ',
+        'MEDIUM': 'СРЕДНЯЯ',
+        'LOW': 'НИЗКАЯ',
+        'NONE': 'НЕТ',
         'Late shift.': 'Ночная смена.',
         'Good morning.': 'Доброе утро.',
         'Good afternoon.': 'Добрый день.',
@@ -1277,6 +1306,8 @@ function applyStaticI18n() {
 function applyAttrI18n() {
     const search = document.getElementById('searchTerm');
     if (search) search.placeholder = t('Product, Vendor, or Keyword...');
+    const qvClose = document.getElementById('qvClose');
+    if (qvClose) qvClose.setAttribute('aria-label', t('Close'));
 }
 
 // #apiStatus is written from the fetch path with t() already applied, so a
