@@ -220,6 +220,11 @@
 
 const API_BASE = 'https://services.nvd.nist.gov/rest/json/cves/2.0/';
 const PAGE_SIZE = 1000;        // API maximum is 2000; 1000 keeps first paint sane
+// NVD now builds a page at roughly 30 records a second, so a 1000-record first
+// page is half a minute of blank list. Every stream's first request asks for
+// FIRST_PAGE, and a second pass tops each up to PAGE_SIZE once all have painted.
+const FIRST_PAGE = 100;
+const MIRROR_WAIT_MS = 4000;   // how long a search waits for the mirror's manifest
 const RATE_MAX = 5;            // requests ...
 const RATE_WINDOW = 30000;     // ... per this many ms, unkeyed
 const SEV_ORDER = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
@@ -239,6 +244,12 @@ const DEFAULT_MIRROR = 'https://cve-data.carino.systems';
 
 let corpusMeta = null;         // what the local store says it holds, or null
 let corpusManifest = null;     // only set once a sync has actually fetched one
+// The mirror's manifest as this page fetched it, for the recent weeks (§16):
+// with no usable local corpus they answer the 7/30/90-day views instead of
+// NVD. Null until fetched, when the mirror is unreachable, and after one of
+// its files failed — then the page asks NVD, as it did before.
+let mirrorManifest = null;
+let mirrorReady = null;
 let completeThrough = null;    // set when the plan needs an NVD tail past the snapshot
 let partial = false;           // that tail failed, so the answer stops at completeThrough
 let usedSources = {};
@@ -249,6 +260,12 @@ let syncTried = false;
 let streams = [];              // one per (date window × severity query)
 let records = [];              // every CVE fetched, deduplicated
 let shown = [];                // records after the severity floor and the sort
+// How many of `shown` are drawn. A local or mirror answer can be every CVE in
+// 90 days — over 40,000 — and drawing them all froze the page for minutes, so
+// the list is drawn LIST_STEP cards at a time. Sorting, filtering and every
+// count still run over all of `shown`; only the drawing is stepped.
+const LIST_STEP = 200;
+let visible = LIST_STEP;
 // How many loaded records survived each filter stage, measured in
 // applyFilterSort(). An empty list has three possible causes and they are not
 // interchangeable — emptyMessage() names the one that actually happened.
@@ -365,12 +382,12 @@ function windowsFor(timeframe) {
 
 function buildStreams() {
     completeThrough = null;
-    // With a local corpus the plan is CveSources' job, because it is the only
-    // place that knows all three sources exist. Without one, nothing has
-    // changed: this is the same NVD-only planner as before.
-    if (corpusMeta && window.CveSources) {
+    // With a local corpus, or a mirror offering the recent weeks, the plan is
+    // CveSources' job, because it is the only place that knows every source
+    // exists. With neither, nothing has changed: the same NVD-only planner.
+    if ((corpusMeta || mirrorManifest) && window.CveSources) {
         try {
-            const p = CveSources.plan(state, corpusMeta, corpusManifest);
+            const p = CveSources.plan(state, corpusMeta, corpusManifest, undefined, mirrorManifest);
             if (p && p.streams && p.streams.length) {
                 completeThrough = p.completeThrough;
                 return p.streams;
@@ -387,9 +404,9 @@ function buildStreams() {
     return out;
 }
 
-function streamUrl(s) {
+function streamUrl(s, size) {
     const p = new URLSearchParams();
-    p.set('resultsPerPage', String(PAGE_SIZE));
+    p.set('resultsPerPage', String(size || PAGE_SIZE));
     p.set('startIndex', String(s.loaded));
     p.set('pubStartDate', isoParam(s.start));
     p.set('pubEndDate', isoParam(s.end));
@@ -404,7 +421,7 @@ function streamUrl(s) {
 // The corpus worker belongs to the page, not to a module: a classic Worker
 // cannot share a global with cve-sources.js, and only one instance should ever
 // exist because the worker serialises searches internally.
-function corpusSearch(s) {
+function askWorker(payload) {
     return new Promise((resolve, reject) => {
         try {
             if (!corpusWorker) corpusWorker = new Worker('js/cve-corpus-worker.js');
@@ -429,33 +446,71 @@ function corpusSearch(s) {
         function onErr() { cleanup(); reject(new Error('corpus worker failed')); }
         w.addEventListener('message', onMsg);
         w.addEventListener('error', onErr);
-        w.postMessage({
-            id: id, cmd: 'search', tier: (corpusMeta && corpusMeta.tier) || 'full',
-            years: [s.year],
-            query: {
-                keyword: state.keyword,
-                from: CveSources.ymd(s.start), to: CveSources.ymd(s.end),
-                severity: s.sev || '',
-            },
-        });
+        w.postMessage(Object.assign({ id: id }, payload));
     });
 }
 
-async function fetchStreams(list, onEach) {
+function streamQuery(s) {
+    return {
+        keyword: state.keyword,
+        from: CveSources.ymd(s.start), to: CveSources.ymd(s.end),
+        severity: s.sev || '',
+    };
+}
+
+function corpusSearch(s) {
+    return askWorker({
+        cmd: 'search', tier: (corpusMeta && corpusMeta.tier) || 'full',
+        years: [s.year], query: streamQuery(s),
+    });
+}
+
+// One of the mirror's weekly files (§16). The worker fetches it, checks its
+// SHA-256 and filters it with the corpus filter, so the bytes never reach the
+// page and a week answers exactly the way a local shard would.
+function mirrorBase() {
+    return String((corpusMeta && corpusMeta.mirror) || DEFAULT_MIRROR).replace(/\/+$/, '');
+}
+function recentSearch(s) {
+    return askWorker({
+        cmd: 'recent', url: mirrorBase() + '/' + s.file, sha256: s.sha256, query: streamQuery(s),
+    });
+}
+
+// The manifest is fetched once a page, on the first search, and waited for
+// at most MIRROR_WAIT_MS: an unreachable mirror costs a search four seconds
+// once, then the page asks NVD as it always has.
+function loadMirror() {
+    if (mirrorReady) return mirrorReady;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), MIRROR_WAIT_MS) : null;
+    mirrorReady = fetch(mirrorBase() + '/manifest.json', { cache: 'no-cache', signal: ctl ? ctl.signal : undefined })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((m) => { mirrorManifest = m && typeof m === 'object' && typeof m.snapshot === 'string' ? m : null; })
+        .catch(() => { mirrorManifest = null; })
+        .finally(() => { if (timer) clearTimeout(timer); });
+    return mirrorReady;
+}
+
+// `size` is the NVD page size: a number, or a function of the stream (the
+// top-up pass asks each stream for what its first small page left over).
+async function fetchStreams(list, onEach, size) {
     let done = 0;
     for (const s of list) {
         const src = s.source || 'nvd';
         setStatus(src === 'local'
             ? tf('Searching the local corpus — %1 of %2', done + 1, list.length)
+            : src === 'recent'
+            ? tf('Loading recent CVEs from the mirror — %1 of %2', done + 1, list.length)
             : tf('Loading %1 of %2 requests…', done + 1, list.length));
         let batch, total;
         try {
-            if (src === 'local') {
-                const r = await corpusSearch(s);
+            if (src === 'local' || src === 'recent') {
+                const r = await (src === 'local' ? corpusSearch(s) : recentSearch(s));
                 total = r.total;
                 batch = r.records.map(CveSources.expand);
             } else {
-                const d = await schedule(streamUrl(s));
+                const d = await schedule(streamUrl(s, typeof size === 'function' ? size(s) : size));
                 total = d.totalResults || 0;
                 batch = (d.vulnerabilities || []).map((v) => v && v.cve).filter(Boolean);
             }
@@ -465,6 +520,10 @@ async function fetchStreams(list, onEach) {
             // loud in the header rather than absorbed — returning fewer records
             // without saying so is the exact failure this rebuild removed.
             if (records.length && src === 'nvd') { console.error(err); partial = true; done++; continue; }
+            // A week that would not load or did not verify is not a failed
+            // search either: the mirror is dropped for this page and the whole
+            // search is asked again of NVD (withLoader sees the flag).
+            if (src === 'recent') { mirrorManifest = null; err.retryWithoutMirror = true; }
             throw err;
         }
         usedSources[src] = true;
@@ -776,10 +835,15 @@ function renderProvenance() {
     const prov = document.getElementById('provenance');
     if (!prov) return;
     const snap = corpusMeta && corpusMeta.snapshot ? String(corpusMeta.snapshot).slice(0, 10) : null;
+    const mirrorSnap = mirrorManifest && mirrorManifest.snapshot ? String(mirrorManifest.snapshot).slice(0, 10) : null;
     if (usedSources.local && snap) {
         prov.textContent = usedSources.nvd
             ? tf('Data: local snapshot %1 + NVD live', snap)
             : tf('Data: local snapshot %1', snap);
+    } else if (usedSources.recent && mirrorSnap) {
+        prov.textContent = usedSources.nvd
+            ? tf('Data: mirror snapshot %1 + NVD live', mirrorSnap)
+            : tf('Data: mirror snapshot %1', mirrorSnap);
     } else if (retrievedAt) {
         prov.textContent = tf('Data: NVD — retrieved %1', retrievedAt.toLocaleString(pageLocale()));
     } else {
@@ -797,10 +861,14 @@ function renderSourceChip() {
     const fresh = document.getElementById('freshStamp');
     if (!chip) return;
     const staleDays = (window.CveDataUI && CveDataUI.STALE_DAYS) || 7;
-    const snapAt = corpusMeta && corpusMeta.snapshot ? Date.parse(corpusMeta.snapshot) : NaN;
+    // A list answered from the mirror's recent weeks is a snapshot too, with
+    // the mirror's date, and goes stale under the same rule as a local one.
+    const fromMirror = !usedSources.local && usedSources.recent && mirrorManifest && mirrorManifest.snapshot;
+    const snapIso = fromMirror ? mirrorManifest.snapshot : corpusMeta && corpusMeta.snapshot;
+    const snapAt = snapIso ? Date.parse(snapIso) : NaN;
     // Before any search has answered (a page opened on a dashboard), the
     // stored snapshot is what the page has, so it is what the badge reports.
-    const local = isFinite(snapAt) && (usedSources.local || (!retrievedAt && !records.length));
+    const local = isFinite(snapAt) && (usedSources.local || usedSources.recent || (!retrievedAt && !records.length));
     const days = local ? Math.max(0, Math.floor((Date.now() - snapAt) / 86400000)) : 0;
     // suffix (source or age) is the part that gives way on a phone.
     let text, kind = '', title = t_('Data source'), stamp = '', suffix = '';
@@ -816,7 +884,7 @@ function renderSourceChip() {
     } else {
         text = t_('LOADING');
     }
-    if (local) stamp = t_('Updated') + ' ' + String(corpusMeta.snapshot).slice(0, 10);
+    if (local) stamp = t_('Updated') + ' ' + String(snapIso).slice(0, 10);
     else if (retrievedAt) stamp = t_('Updated') + ' ' + retrievedAt.toLocaleTimeString('en-GB', { hour12: false });
     chip.textContent = text;
     if (suffix) {
@@ -838,6 +906,18 @@ function renderLoadMore() {
     const wrap = document.getElementById('loadMoreWrap');
     if (!wrap) return;
     wrap.innerHTML = '';
+    // Cards already loaded but not yet drawn come first: showing them costs
+    // nothing, while loading more costs requests.
+    if (shown.length > visible) {
+        const more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'load-more';
+        more.textContent = tf('Show %1 more (%2 not yet shown)',
+            fmtNum(Math.min(LIST_STEP, shown.length - visible)), fmtNum(shown.length - visible));
+        more.addEventListener('click', () => { visible += LIST_STEP; renderList(); });
+        wrap.appendChild(more);
+        return;
+    }
     const remaining = streams.reduce((n, s) => n + Math.max(0, (s.total || 0) - s.loaded), 0);
     if (remaining <= 0) return;
     const b = document.createElement('button');
@@ -859,7 +939,7 @@ function renderList() {
         list.innerHTML = '<div class="empty">' + esc(emptyMessage()) + '</div>';
     } else {
         const frag = document.createDocumentFragment();
-        shown.forEach((c) => frag.appendChild(card(c)));
+        shown.slice(0, visible).forEach((c) => frag.appendChild(card(c)));
         list.appendChild(frag);
     }
     renderHeader();
@@ -884,10 +964,16 @@ async function withLoader(fn) {
         setStatus(partial ? t_('NVD unreachable — local results only')
             : usedSources.nvd ? t_('NVD API Connected')
             : usedSources.local ? t_('Answered from the local corpus')
+            : usedSources.recent ? t_('Answered from the mirror snapshot')
             : t_('NVD API Connected'));
         return true;
     } catch (err) {
         console.error(err);
+        if (err && err.retryWithoutMirror) {
+            setStatus(t_('Mirror unreachable — asking NVD'));
+            setTimeout(runSearch, 0);
+            return false;
+        }
         setStatus(t_('API Error'));
         searchError = err || true;
         renderSourceChip();
@@ -908,14 +994,21 @@ async function withLoader(fn) {
 async function runSearch() {
     readControls();
     writeHash();
+    // Only a page that has not asked yet waits, and never for long.
+    await loadMirror();
     streams = buildStreams();
-    records = []; shown = []; seenIds = new Set(); retrievedAt = null;
+    records = []; shown = []; seenIds = new Set(); retrievedAt = null; visible = LIST_STEP;
     partial = false; usedSources = {}; searchError = null;
     // Clear the previous result set without going through renderList(), which
     // would flash "no CVEs in this window" before the first request returns.
     document.getElementById('resultsList').innerHTML = '';
     document.getElementById('loadMoreWrap').innerHTML = '';
-    if (await withLoader(() => fetchStreams(streams, paint))) paint();
+    if (!(await withLoader(() => fetchStreams(streams, paint, FIRST_PAGE)))) return;
+    // Every NVD stream has painted its first small page; now each is topped up
+    // to the page the list has always loaded, so nothing is lost but the wait.
+    const topUp = streams.filter((s) => (s.source || 'nvd') === 'nvd' && !s.done && s.loaded < PAGE_SIZE);
+    if (topUp.length && !(await withLoader(() => fetchStreams(topUp, paint, (s) => PAGE_SIZE - s.loaded)))) return;
+    paint();
 }
 
 function paint() {
@@ -940,6 +1033,7 @@ function reSortList() {
     if (window.CveModes) CveModes.cancelPending();
     state.sort = document.getElementById('sortBy').value;
     writeHash();
+    visible = LIST_STEP;
     applyFilterSort();
     renderList();
 }
@@ -953,6 +1047,7 @@ function reFilterList() {
     if (window.CveModes) CveModes.cancelPending();
     readEnrichControls();
     writeHash();
+    visible = LIST_STEP;
     applyFilterSort();
     renderList();
 }
