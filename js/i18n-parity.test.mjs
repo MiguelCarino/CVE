@@ -132,3 +132,16 @@ test('each dashboard locale file extends its own locale and nothing else', () =>
         assert.deepEqual(targets, [l], 'js/i18n-obs-' + l + '.js extends ' + JSON.stringify(targets));
     }
 });
+
+test('no dashboard locale file gives a main i18n.js key another value', () => {
+    // The obs files Object.assign over I18N when a dashboard opens, so a key
+    // in both would read one way before that visit and another way after it.
+    const main = new Function(read('i18n.js').split('function currentFleetLang')[0] + ';\nreturn I18N;')();
+    for (const l of LOCALES) {
+        const stub = {};
+        for (const x of LOCALES) stub[x] = {};
+        const obs = new Function('I18N', read('js/i18n-obs-' + l + '.js') + ';\nreturn I18N;')(stub)[l];
+        const dup = Object.keys(obs).filter((k) => k in main[l] && obs[k] !== main[l][k]);
+        assert.deepEqual(dup, [], 'js/i18n-obs-' + l + '.js gives ' + dup.length + ' key(s) of i18n.js another value');
+    }
+});

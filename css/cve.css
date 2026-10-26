@@ -98,11 +98,17 @@ button.search-btn:hover { background-color: #fbbf24; box-shadow: 0 4px 14px rgba
 body > .cve-actions { display: none; }
 #cveMenuBtn { display: none; font-size: var(--fs-sm); }
 #cveScrim { display: none; }
+/* Export ▾: why the items are off, or what the last export did. */
+.export-why { margin: 6px 12px 4px; white-space: normal; padding-left: 0; max-width: 260px; }
 
 @media (max-width: 640px) {
     #carinoNav #srcChip .chip-src { display: none; }
     /* still the button's name, just not drawn */
-    #carinoNav #cveMenuBtn .mb-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    #carinoNav #cveMenuBtn .mb-t, #carinoNav #exportMenuBtn .mb-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    /* The panel is pinned at right:12px here; long pt-BR and ru labels
+       would push its left edge off screen, so they wrap instead. */
+    #exportMenu { max-width: calc(100vw - 24px); }
+    #exportMenu .cs-menu-item { white-space: normal; }
 }
 @media (max-width: 900px) {
     #carinoNav #cveMenuBtn { display: inline-flex; }

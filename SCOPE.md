@@ -314,6 +314,7 @@ description len  median 310 chars (min 62, max 1397)
 | 6 | **Cross-fleet joins** — `Hardware` (vendor/model) → CVE; `SoftwareCatalog` (what you deploy) → CVE | `carino-bridge.js` | This is the chain from `INDUSTRIES.md` §8.3 made real, and it is what makes the IT bundle cohere rather than being eleven separate pages. |
 | 7 | **Data-quality lens** — CVEs with no CWE, no CVSS, one-line descriptions, dead references | Corpus | Useful to defenders, mildly provocative, excellent content marketing. |
 | 8 | **Reproducible statistics.** Every chart cites the snapshot hash that produced it | Manifest | **The real differentiator against every threat-intel blog:** anyone can recompute our number from the same snapshot. Costs nothing and is impossible for a vendor with proprietary data to match. |
+| 9 | **Search report** (shipped 2026-10-26). The navbar's Export ▾ turns the last List search into a printable page (`js/cve-report.js`) and a CSV and JSON of every listed row, with KEV and EPSS columns; the JSON states its sources, failed NVD windows, applied filters and whether it is `reproducible` | The List, `js/cve-report.js` | The List's counterpart to the watchlist report. **Phase 2: a Trends / Projection / Observatory snapshot** (the charts as an image or a page, with the "Not a risk score, not a vulnerability assessment." footer §21 requires). Not built yet: those charts draw lazily and their strings load per locale, so until then the menu says, in a dashboard view, that its report covers the last List search and not the chart on screen. |
 
 ## 14. Integrity rules — non-negotiable if we publish statistics
 
@@ -484,6 +485,9 @@ shorter than the one on `main`.
 
 §14 and §15 carry over unchanged. The view opens, on first load, with: **"Not a risk score, not a
 vulnerability assessment."** — dismissible, and restated in the footer of every exported image.
+*(2026-10-26: no dashboard image export exists yet; it is phase 2, logged in §13 row 9. When it is
+built it carries this footer. The search report from Export ▾ already prints it, and the key now
+lives in `i18n.js` rather than the dashboard-only `js/i18n-obs-*.js`, so any page can use it.)*
 
 ### 21a. Projection — method `proj-v1` (decided 2026-10-11)
 

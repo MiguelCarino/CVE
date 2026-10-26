@@ -1258,6 +1258,119 @@ async function main() {
                 expect(await page.eval("document.getElementById('modeLive').getAttribute('aria-live')") === 'polite', '#modeLive is not a polite live region');
             } finally { await page.close(); }
         });
+
+        /* 18. Export ▾ ------------------------------------------------------- */
+        // No timing here: only what the menu offers when, and what it hands over.
+        await step(18, 'Export ▾: off while searching and before a search; the report opens in a tab with its CSP and footer; CSV and JSON names; dashboards say what is covered; Esc, Filters and Quick views still work', async (expect) => {
+            const page = await boot('/index.html' + withQ(), { nvdMs: SLOW_NVD_MS });
+            const key = async (k, code, vk) => {
+                await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk });
+                await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk });
+            };
+            const menu = `(function(){var w=document.getElementById('exportWhy');return {open:!document.getElementById('exportMenu').hidden,
+                off:['reportBtn','exportCsv','exportJson'].map(function(id){return document.getElementById(id).disabled;}),
+                why:w.hidden?'':w.textContent,watch:!document.getElementById('watchReportBtn').hidden};})()`;
+            try {
+                // Downloads are recorded, not performed: the anchor's click is
+                // caught on its way to the default action.
+                await page.eval(`(function(){window.__dl=[];document.addEventListener('click',function(e){
+                    var a=e.target&&e.target.closest&&e.target.closest('a[download]');
+                    if(a){window.__dl.push({name:a.download,href:a.href});e.preventDefault();}},true);})()`);
+
+                // While the first search waits on NVD, every item is off.
+                await page.waitFor('searching === true', DRAW_MS, 'a search running');
+                await page.click('#exportMenuBtn');
+                let m = await page.eval(menu);
+                expect(m.open, 'Export ▾ did not open');
+                expect(m.off.every(Boolean), 'items enabled while a search runs: ' + JSON.stringify(m.off));
+                expect(/A search is running/.test(m.why), 'reason while searching: "' + m.why + '"');
+                expect(m.watch, 'the watchlist item is hidden although CveWatch loaded');
+                await key('Escape', 'Escape', 27);
+                expect(!(await page.eval(menu)).open, 'Esc did not close Export ▾');
+
+                await page.waitFor(`searching === false && !!document.querySelector('#resultsList .cve-item')`,
+                    SLOW_NVD_MS + DRAW_MS * 2, 'the list, search settled');
+                // Before any search has finished (put back afterwards).
+                m = await page.eval('(function(){var q=lastQuery;lastQuery=null;syncExportMenu();var r=' + menu + ';lastQuery=q;syncExportMenu();return r;})()');
+                expect(m.off.every(Boolean) && /Run a search first/.test(m.why), 'no search yet: ' + JSON.stringify(m));
+                await page.click('#exportMenuBtn');
+                m = await page.eval(menu);
+                expect(m.off.every((v) => !v), 'items still off after the search: ' + JSON.stringify(m));
+                expect(!/Covers the last List search/.test(m.why), 'the dashboard note shows in the List');
+                await key('Escape', 'Escape', 27);
+
+                // The report: a tab the page opens synchronously, then fills.
+                await page.eval(`(function(){window.__rep={};window.open=function(){return {closed:false,
+                    location:{replace:function(u){window.__rep.url=u;}},document:{URL:'',readyState:'loading'},
+                    close:function(){window.__rep.closed=true;},print:function(){}};};})()`);
+                await page.click('#reportBtn');
+                await page.waitFor('!!(window.__rep && __rep.url)', DRAW_MS, 'the report handed to the tab');
+                const html = await page.eval('fetch(__rep.url).then(function(r){return r.text();})');
+                const head = html.slice(0, html.indexOf('<style'));
+                expect(/<title>[^<]+\d{4}-\d{2}-\d{2}<\/title>/.test(html), 'report title: ' + (html.match(/<title>[^<]*<\/title>/) || ['none'])[0]);
+                expect(/<meta http-equiv="Content-Security-Policy" content="default-src 'none'/.test(head), 'no CSP meta before the style');
+                expect(!/<script/i.test(html), 'the report carries a <script>');
+                expect(html.includes('Not a risk score, not a vulnerability assessment.'), 'report footer lacks the disclaimer');
+                expect(html.includes('Monitoring only, not advice.'), 'report footer lacks "Monitoring only"');
+                expect(html.includes('not endorsed or certified by the NVD'), 'report footer lacks the NVD attribution');
+                expect(/Report opened in a new tab/.test(await page.eval(textOf('#apiStatus'))), 'status after the report: ' + await page.eval(textOf('#apiStatus')));
+
+                // CSV and JSON: stamped names, every row, English.
+                await page.click('#exportCsv');
+                await page.waitFor('__dl.length >= 1', DRAW_MS, 'the CSV download');
+                await page.click('#exportJson');
+                await page.waitFor('__dl.length >= 2', DRAW_MS, 'the JSON download');
+                const dl = await page.eval('__dl');
+                expect(/^cve-[^/]+-\d{4}-\d{2}-\d{2}\.csv$/.test(dl[0].name), 'CSV name: ' + dl[0].name);
+                expect(/^cve-[^/]+-\d{4}-\d{2}-\d{2}\.json$/.test(dl[1].name), 'JSON name: ' + dl[1].name);
+                const csv = await page.eval('fetch(__dl[0].href).then(function(r){return r.text();})');
+                expect(/^﻿?id,published,/.test(csv) && /\r\n/.test(csv), 'CSV header/line endings: ' + JSON.stringify(csv.slice(0, 60)));
+                const listed = await page.eval('shown.length');
+                const json = JSON.parse(await page.eval('fetch(__dl[1].href).then(function(r){return r.text();})'));
+                expect(json.report === 'carino-cve-search' && Array.isArray(json.results) && json.results.length === listed,
+                    'JSON: report=' + json.report + ', results ' + (json.results && json.results.length) + ' of ' + listed);
+                expect(json.source !== 'NVD CVE API 2.0', 'JSON source is the old hardcoded string');
+
+                // A dashboard: the items still cover the last List search, and say so.
+                await toMode(page, 'trends');
+                await page.click('#exportMenuBtn');
+                m = await page.eval(menu);
+                expect(m.open && /Covers the last List search/.test(m.why), 'in Trends: ' + JSON.stringify(m));
+                await key('Escape', 'Escape', 27);
+                expect(!(await page.eval(menu)).open, 'Esc did not close Export ▾ in Trends');
+                await toMode(page, 'list');
+
+                // The rest of the page's Esc handling is untouched by carino-ui.js.
+                await page.click('.qv-more');
+                expect(await page.eval("document.getElementById('viewsDialog').open"), 'Quick views did not open');
+                await key('Escape', 'Escape', 27);
+                expect(!(await page.eval("document.getElementById('viewsDialog').open")), 'Esc did not close Quick views');
+                await page.send('Emulation.setDeviceMetricsOverride', { width: 800, height: 900, deviceScaleFactor: 1, mobile: false });
+                await page.waitFor(`getComputedStyle(document.getElementById('cveMenuBtn')).display !== 'none'`, DRAW_MS, 'the Filters button at 800 px');
+                await page.click('#cveMenuBtn');
+                expect(await page.eval("document.querySelector('.controls').classList.contains('open')"), 'the Filters drawer did not open');
+                await key('Escape', 'Escape', 27);
+                expect(!(await page.eval("document.querySelector('.controls').classList.contains('open')")), 'Esc did not close the Filters drawer');
+                expect(await page.eval("!!document.querySelector('#carinoNav #exportMenuBtn') && !document.querySelector('#carinoNav .cn-more-menu #exportMenuBtn')"),
+                    'Export ▾ is not in the navbar bar at 800 px');
+                // Opening the drawer closes an open Export ▾ (its click stops
+                // propagation, so only the capture-phase close can see it).
+                await page.click('#exportMenuBtn');
+                expect((await page.eval(menu)).open, 'Export ▾ did not open at 800 px');
+                await page.click('#cveMenuBtn');
+                expect(!(await page.eval(menu)).open, 'Export ▾ stayed open over the Filters drawer');
+                await key('Escape', 'Escape', 27);
+                // The smallest phone: Export may fold into More, Filters may not.
+                await page.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 700, deviceScaleFactor: 1, mobile: true });
+                await page.waitFor('innerWidth === 320', DRAW_MS, 'the 320 px viewport');
+                await new Promise((r) => setTimeout(r, 300));
+                expect(await page.eval("!!document.querySelector('#carinoNav #cveMenuBtn') && !document.querySelector('#carinoNav .cn-more-menu #cveMenuBtn')"),
+                    'the Filters button folded into More at 320 px');
+
+                const errs = realErrors(page, origin);
+                expect(errs.length === 0, 'console errors:\n       ' + errs.slice(0, 8).join('\n       '));
+            } finally { await page.close(); }
+        });
     } finally {
         await cdp.send('Browser.close').catch(() => {});
         cdp.close();

@@ -39,6 +39,21 @@
     <div class="cve-actions" data-carino-actions>
         <span class="live-chip" id="srcChip" title="Data source" data-priority="2">LOADING</span>
         <span class="fresh" id="freshStamp" hidden></span>
+        <!-- Export ▾ (carino-ui.js opens and closes it). Every item covers the
+             last List search; syncExportMenu() disables them, with the reason
+             in #exportWhy, until there is a finished search to report. -->
+        <div class="cs-menu" id="exportWrap" data-priority="2">
+            <button type="button" id="exportMenuBtn" class="cs-btn" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenu"><span aria-hidden="true">⤓</span> <span class="mb-t" data-i18n>Export</span> <span class="cs-caret" aria-hidden="true">▾</span></button>
+            <div id="exportMenu" class="cs-menu-panel" role="menu" aria-labelledby="exportMenuBtn" hidden>
+                <button type="button" id="reportBtn" class="cs-menu-item" role="menuitem"><span aria-hidden="true">📋</span> <span data-i18n>Search report</span> <span class="cs-menu-note" data-i18n>printable</span></button>
+                <div class="cs-menu-div"></div>
+                <button type="button" id="exportCsv" class="cs-menu-item" role="menuitem"><span aria-hidden="true">📄</span> CSV <span class="cs-menu-note" data-i18n>every row</span></button>
+                <button type="button" id="exportJson" class="cs-menu-item" role="menuitem"><span aria-hidden="true">📄</span> JSON <span class="cs-menu-note" data-i18n>every row</span></button>
+                <div class="cs-menu-div"></div>
+                <button type="button" id="watchReportBtn" class="cs-menu-item" role="menuitem"><span aria-hidden="true">👁</span> <span data-i18n>Watchlist report…</span> <span class="cs-menu-note" data-i18n>stored corpus</span></button>
+                <p class="cs-menu-note export-why" id="exportWhy" hidden></p>
+            </div>
+        </div>
         <button type="button" class="cs-btn" id="cveMenuBtn" aria-controls="filterRail" aria-expanded="false" data-priority="1"><span aria-hidden="true">☰</span> <span class="mb-t" data-i18n>Filters</span></button>
     </div>
 
@@ -144,8 +159,6 @@
                             <option value="score-low" data-i18n>Score (Low to High)</option>
                         </select>
                     </div>
-                    <button type="button" class="btn-ghost" id="exportCsv">CSV</button>
-                    <button type="button" class="btn-ghost" id="exportJson">JSON</button>
                 </div>
 
                 <!-- The freshness chip and the section chip bar of whichever
@@ -279,6 +292,13 @@ let searchError = null;
 // run while the list is hidden would cost NVD requests nobody sees: the list
 // remembers it owes one and runs it when it is shown.
 let listDirty = false;
+// The Export menu reports the last search that FINISHED, so it needs to know
+// when one is running and what the finished one asked. `lastQuery` is the
+// question as it was put to the sources, not whatever the controls say now.
+let searching = false, lastQuery = null;
+let searchOps = 0;             // runSearch/loadMore calls in flight
+let retryHold = false;         // a search is about to be retried without the mirror
+let exportOutcome = '';        // what the last export did, for #exportWhy
 
 /* ---- helpers ------------------------------------------------------ */
 
@@ -293,6 +313,36 @@ function tf(key) {
     const args = Array.prototype.slice.call(arguments, 1);
     return t_(key).replace(/%(\d)/g, (m, i) => (args[i - 1] === undefined ? m : String(args[i - 1])));
 }
+
+// Translators. The coverage notes, the provenance line and the empty-list
+// message are written once and read twice: on screen and in the report in
+// the page language (PAGE_TR), and in the JSON export in English (EN_TR) —
+// built in English, never translated back. `iso` prints dates as ISO with
+// their offset and numbers without grouping, which is what a file wants.
+const PAGE_TR = {
+    t_: (k) => t_(k),
+    tf: function () { return tf.apply(null, arguments); },
+    get locale() { return pageLocale(); },
+    iso: false,
+};
+const EN_TR = {
+    t_: (s) => s,
+    tf: (s, ...a) => s.replace(/%(\d+)/g, (m, i) => (a[i - 1] === undefined ? m : String(a[i - 1]))),
+    locale: 'en',
+    iso: true,
+};
+const trNum = (tr, n) => (tr.iso ? String(Number(n || 0)) : fmtNum(n));
+// 2026-10-26T14:05:09-06:00: the local wall time and the offset it was in.
+function isoWithOffset(d) {
+    const p = (n) => String(Math.abs(n)).padStart(2, '0');
+    const off = -d.getTimezoneOffset();
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+        'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) +
+        (off >= 0 ? '+' : '-') + p(Math.floor(Math.abs(off) / 60)) + ':' + p(Math.abs(off) % 60);
+}
+const trStamp = (tr, d) => (tr.iso ? isoWithOffset(d) : d.toLocaleString(tr.locale));
+const utcDay = (d) => { const x = d instanceof Date ? d : new Date(d); return isFinite(x) ? x.toISOString().slice(0, 10) : ''; };
+const tick = () => new Promise((r) => setTimeout(r, 0));
 
 // NVD timestamps carry no zone ("2026-08-21T13:41:31.243"). Left alone, JS
 // reads them as local time and the displayed date can slip by a day.
@@ -519,7 +569,17 @@ async function fetchStreams(list, onEach, size) {
             // a shorter answer, not a failed search. It is recorded and said out
             // loud in the header rather than absorbed — returning fewer records
             // without saying so is the exact failure this rebuild removed.
-            if (records.length && src === 'nvd') { console.error(err); partial = true; done++; continue; }
+            // A stream that never answered is marked, with its window kept, so
+            // the header and the report can name the dates that are missing.
+            // One that answered before (a top-up or Load more) keeps its total:
+            // what it did not deliver is counted as not loaded instead.
+            if (records.length && src === 'nvd') {
+                console.error(err);
+                if (s.total === null || s.total === undefined) s.failed = true;
+                else s.interrupted = true;
+                partial = true;
+                done++; continue;
+            }
             // A week that would not load or did not verify is not a failed
             // search either: the mirror is dropped for this page and the whole
             // search is asked again of NVD (withLoader sees the flag).
@@ -527,6 +587,11 @@ async function fetchStreams(list, onEach, size) {
             throw err;
         }
         usedSources[src] = true;
+        s.failed = false;
+        s.interrupted = false;
+        // A stream that failed and has now answered (the top-up pass, Load
+        // more) is no longer missing: `partial` follows what is still failed.
+        partial = nvdUnrecovered();
         s.total = total;
         batch.forEach((c) => {
             if (!c || seenIds.has(c.id)) return;
@@ -753,18 +818,34 @@ function card(c) {
 // Three different facts can produce an empty list, and telling them apart is
 // the whole difference between "nothing matched" and "nothing is exploited".
 // The counts come from applyFilterSort(), which measured them.
-function emptyMessage() {
-    if (!records.length) return t_('No CVEs were published in this window.');
-    const floored = tf('All %1 loaded records were filtered out by the severity floor.', fmtNum(records.length));
+// `tr` is the translator (PAGE_TR on screen and in the report, EN_TR for the
+// JSON), so every caller states the same fact in the same words.
+function emptyMessage(tr = PAGE_TR) {
+    if (!records.length) {
+        // A keyword search that found nothing is not a quiet week. And a
+        // floor the source applied (floorAtSource) only rules out the levels
+        // it covers: lower-severity CVEs may exist in this window.
+        const kw = lastQuery && lastQuery.keyword;
+        if (floorAtSource()) {
+            const sev = lastQuery.severity;   // the enum, as the report's settings print it
+            return kw
+                ? tr.tf('No CVEs in this window matched “%1” at %2 or above.', kw, sev)
+                : tr.tf('No CVEs at %1 or above were published in this window.', sev);
+        }
+        return kw
+            ? tr.tf('No CVEs in this window matched “%1”.', kw)
+            : tr.t_('No CVEs were published in this window.');
+    }
+    const floored = tr.tf('All %1 loaded records were filtered out by the severity floor.', trNum(tr, records.length));
     if (!floorCount) return floored;
     const ready = enrichReady();
     if (state.kev && ready.kev && !kevCount) {
-        return tf('None of the %1 records that cleared the severity floor are in the CISA KEV catalogue. KEV is about 0.44% of all CVEs, so filtering one page of NVD results to it usually finds none — over a local corpus the same question is exact.',
-            fmtNum(floorCount));
+        return tr.tf('None of the %1 records that cleared the severity floor are in the CISA KEV catalogue. KEV is about 0.44% of all CVEs, so filtering one page of NVD results to it usually finds none — over a local corpus the same question is exact.',
+            trNum(tr, floorCount));
     }
     if (state.epssMin > 0 && ready.epss) {
-        return tf('None of the %1 records that cleared the earlier filters score %2 or higher in EPSS.',
-            fmtNum(kevCount), state.epssMin);
+        return tr.tf('None of the %1 records that cleared the earlier filters score %2 or higher in EPSS.',
+            trNum(tr, kevCount), state.epssMin);
     }
     return floored;
 }
@@ -780,13 +861,99 @@ function daysOld(stampStr) {
     return Math.floor((Date.now() - at) / 86400000);
 }
 
-function enrichAgeNotes(ready) {
+function enrichAgeNotes(ready, tr = PAGE_TR) {
     const out = [];
     const k = ready.kev ? daysOld(ready.generated) : null;
-    if (k !== null && k > ENRICH_STALE_DAYS) out.push(tf('KEV catalogue is %1 days old', fmtNum(k)));
+    if (k !== null && k > ENRICH_STALE_DAYS) out.push(tr.tf('KEV catalogue is %1 days old', trNum(tr, k)));
     const e = ready.epss ? daysOld(ready.date) : null;
-    if (e !== null && e > ENRICH_STALE_DAYS) out.push(tf('EPSS scores are %1 days old', fmtNum(e)));
+    if (e !== null && e > ENRICH_STALE_DAYS) out.push(tr.tf('EPSS scores are %1 days old', trNum(tr, e)));
     return out;
+}
+
+// True while an NVD request of this search failed and has not answered
+// since: a stream that never answered (failed) or one that stopped after
+// answering (interrupted, a top-up or Load more).
+function nvdUnrecovered() {
+    return streams.some((s) => (s.source || 'nvd') === 'nvd' && (s.failed || s.interrupted));
+}
+
+// A snapshot answer whose NVD tail never answered at all. When the tail
+// answered in part, NVD records are on the list and the missing part is
+// stated by the failed-windows and not-loaded notes instead.
+function tailUnanswered() {
+    return partial && !usedSources.nvd;
+}
+
+// Whether the source itself filtered by the severity floor: NVD gets
+// cvssV3Severity for a Critical or High+ floor, and a local or mirror worker
+// applies any floor. Then a source count is already floored.
+function floorAtSource() {
+    return !!(lastQuery && lastQuery.severity && lastQuery.streams.some((s) => s.sev));
+}
+
+// The NVD requests of the current search that never answered, and the
+// windows they were asked for (UTC days). A failed stream has no total, so
+// every count that sums totals is a lower bound while this is non-zero.
+function nvdFailed() {
+    const nvd = streams.filter((s) => (s.source || 'nvd') === 'nvd');
+    const bad = nvd.filter((s) => s.failed);
+    // One entry per window: a High+ floor asks each window twice (CRITICAL,
+    // HIGH), and a window is missing only for the levels that failed.
+    const byWin = new Map();
+    bad.forEach((s) => {
+        const start = utcDay(s.start), end = utcDay(s.end);
+        const key = start + '|' + end;
+        if (!byWin.has(key)) byWin.set(key, { start, end, severities: [] });
+        if (s.sev && byWin.get(key).severities.indexOf(s.sev) < 0) byWin.get(key).severities.push(s.sev);
+    });
+    // A window whose every level failed is missing whole: no list then.
+    byWin.forEach((w) => {
+        const asked = nvd.filter((s) => utcDay(s.start) === w.start && utcDay(s.end) === w.end && s.sev).length;
+        if (!w.severities.length || w.severities.length >= asked) delete w.severities;
+    });
+    return {
+        failed: bad.length,
+        total: nvd.length,
+        windows: [...byWin.values()],
+    };
+}
+
+// The caveats under the result count, as {notes, tip}. The report prints the
+// same list, so the screen and the paper cannot disagree about what is missing.
+function coverageNotes(tr = PAGE_TR) {
+    const notes = [];
+    let tip = '';
+    const nf = nvdFailed();
+    if (nf.failed) {
+        notes.push(tr.tf('%1 of %2 NVD requests failed; these windows are missing: %3.',
+            trNum(tr, nf.failed), trNum(tr, nf.total),
+            nf.windows.map((w) => w.start + '–' + w.end + (w.severities ? ' (' + w.severities.join(', ') + ')' : '')).join(', ')));
+    }
+    if (partial && completeThrough) notes.push(tr.tf('complete through %1', completeThrough));
+    // Only a snapshot answer whose NVD tail never answered is "local results only".
+    if (tailUnanswered() && usedSources.local) notes.push(tr.t_('NVD unreachable — local results only'));
+    // §10's honest limit, stated rather than discovered. KEV is 0.44% of
+    // all CVEs: over a page of NVD results the filter can only see what was
+    // loaded, so an empty list is a fact about this page and not about the
+    // catalogue. Over a local corpus it is exact and no note is needed.
+    const ready = enrichReady();
+    if (state.kev && !ready.kev) {
+        notes.push(tr.t_('KEV list not loaded — that filter was not applied'));
+    } else if (state.kev && usedSources.nvd) {
+        notes.push(tr.tf('KEV filter covers the %1 loaded records only', trNum(tr, records.length)));
+        tip = tr.t_('CISA KEV is about 0.44% of all CVEs. Applied to a live NVD page this filter sees only the records that were loaded; applied to a local corpus it is exact.');
+    }
+    if (state.epssMin > 0 && !ready.epss) {
+        notes.push(tr.t_('EPSS scores not loaded — that filter was not applied'));
+    }
+    // §9, applied to the two feeds that carry their own dates. A KEV badge
+    // is rendered from whatever this browser holds, and after an unreachable
+    // mirror that is a copy older than the one being published — which is
+    // precisely the confident stale answer §9 forbids. The tooltip on the
+    // filter says how old; a badge on a card cannot, so the age goes here
+    // whenever a feed is loaded, filter or no filter.
+    enrichAgeNotes(ready, tr).forEach((n) => notes.push(n));
+    return { notes, tip };
 }
 
 function renderHeader() {
@@ -798,57 +965,43 @@ function renderHeader() {
     }
     const cov = document.getElementById('coverage');
     if (cov) {
-        const notes = [];
-        let tip = '';
-        if (partial && completeThrough) notes.push(tf('complete through %1', completeThrough));
-        // §10's honest limit, stated rather than discovered. KEV is 0.44% of
-        // all CVEs: over a page of NVD results the filter can only see what was
-        // loaded, so an empty list is a fact about this page and not about the
-        // catalogue. Over a local corpus it is exact and no note is needed.
-        const ready = enrichReady();
-        if (state.kev && !ready.kev) {
-            notes.push(t_('KEV list not loaded — that filter was not applied'));
-        } else if (state.kev && usedSources.nvd) {
-            notes.push(tf('KEV filter covers the %1 loaded records only', fmtNum(records.length)));
-            tip = t_('CISA KEV is about 0.44% of all CVEs. Applied to a live NVD page this filter sees only the records that were loaded; applied to a local corpus it is exact.');
-        }
-        if (state.epssMin > 0 && !ready.epss) {
-            notes.push(t_('EPSS scores not loaded — that filter was not applied'));
-        }
-        // §9, applied to the two feeds that carry their own dates. A KEV badge
-        // is rendered from whatever this browser holds, and after an unreachable
-        // mirror that is a copy older than the one being published — which is
-        // precisely the confident stale answer §9 forbids. The tooltip on the
-        // filter says how old; a badge on a card cannot, so the age goes here
-        // whenever a feed is loaded, filter or no filter.
-        enrichAgeNotes(ready).forEach((n) => notes.push(n));
-        cov.textContent = notes.join(' · ');
-        cov.title = tip;
+        const c = coverageNotes();
+        cov.textContent = c.notes.join(' · ');
+        cov.title = c.tip;
         cov.style.display = cov.textContent ? '' : 'none';
     }
     renderProvenance();
 }
 
-// The rail states which of the three sources actually answered, because "where
-// did this come from and when" is the whole claim the offline corpus makes.
+// Which of the three sources actually answered, because "where did this come
+// from and when" is the whole claim the offline corpus makes. The rail shows
+// it, and the report and the JSON `source` carry the same sentence.
+function provenanceText(tr = PAGE_TR) {
+    const snap = corpusMeta && corpusMeta.snapshot ? String(corpusMeta.snapshot).slice(0, 10) : null;
+    const mirrorSnap = mirrorManifest && mirrorManifest.snapshot ? String(mirrorManifest.snapshot).slice(0, 10) : null;
+    // A snapshot answer whose NVD tail was asked for and failed says so,
+    // rather than reading as a complete snapshot (or as "+ NVD live").
+    const failedTail = ' ' + tr.tf('+ NVD (failed; complete through %1)', completeThrough || '—');
+    if (usedSources.local && snap) {
+        if (tailUnanswered()) return tr.tf('Data: local snapshot %1', snap) + failedTail;
+        return usedSources.nvd
+            ? tr.tf('Data: local snapshot %1 + NVD live', snap)
+            : tr.tf('Data: local snapshot %1', snap);
+    }
+    if (usedSources.recent && mirrorSnap) {
+        if (tailUnanswered()) return tr.tf('Data: mirror snapshot %1', mirrorSnap) + failedTail;
+        return usedSources.nvd
+            ? tr.tf('Data: mirror snapshot %1 + NVD live', mirrorSnap)
+            : tr.tf('Data: mirror snapshot %1', mirrorSnap);
+    }
+    if (retrievedAt) return tr.tf('Data: NVD — retrieved %1', trStamp(tr, retrievedAt));
+    return tr.t_('Data source');
+}
+
 function renderProvenance() {
     const prov = document.getElementById('provenance');
     if (!prov) return;
-    const snap = corpusMeta && corpusMeta.snapshot ? String(corpusMeta.snapshot).slice(0, 10) : null;
-    const mirrorSnap = mirrorManifest && mirrorManifest.snapshot ? String(mirrorManifest.snapshot).slice(0, 10) : null;
-    if (usedSources.local && snap) {
-        prov.textContent = usedSources.nvd
-            ? tf('Data: local snapshot %1 + NVD live', snap)
-            : tf('Data: local snapshot %1', snap);
-    } else if (usedSources.recent && mirrorSnap) {
-        prov.textContent = usedSources.nvd
-            ? tf('Data: mirror snapshot %1 + NVD live', mirrorSnap)
-            : tf('Data: mirror snapshot %1', mirrorSnap);
-    } else if (retrievedAt) {
-        prov.textContent = tf('Data: NVD — retrieved %1', retrievedAt.toLocaleString(pageLocale()));
-    } else {
-        prov.textContent = t_('Data source');
-    }
+    prov.textContent = provenanceText();
     renderSourceChip();
 }
 
@@ -876,7 +1029,9 @@ function renderSourceChip() {
         text = t_('ERROR'); kind = 'err'; title = tf('Could not reach %1.', 'NVD');
     } else if (local && (days > staleDays || partial)) {
         text = t_('STALE'); suffix = ' · ' + tf('%1d', days); kind = 'stale';
-        title = partial ? t_('NVD unreachable — local results only') : tf('Local snapshot is %1 days old', fmtNum(days));
+        title = partial
+            ? (usedSources.local && tailUnanswered() ? t_('NVD unreachable — local results only') : tf('Could not reach %1.', 'NVD'))
+            : tf('Local snapshot is %1 days old', fmtNum(days));
     } else if (local) {
         text = t_('SNAPSHOT'); suffix = ' · ' + tf('%1d', days); kind = 'live';
     } else if (retrievedAt) {
@@ -961,7 +1116,9 @@ async function withLoader(fn) {
         // connection after a local-only search asserts a network path this
         // search never touched: for a past year the plan is local-only and
         // NVD is never contacted, so "connected" is a guess dressed as a fact.
-        setStatus(partial ? t_('NVD unreachable — local results only')
+        // "Local results only" is said only when the local corpus answered;
+        // a mirror answer, or an NVD year with a failed quarter, is not one.
+        setStatus(partial ? (usedSources.local && tailUnanswered() ? t_('NVD unreachable — local results only') : tf('Could not reach %1.', 'NVD'))
             : usedSources.nvd ? t_('NVD API Connected')
             : usedSources.local ? t_('Answered from the local corpus')
             : usedSources.recent ? t_('Answered from the mirror snapshot')
@@ -971,6 +1128,9 @@ async function withLoader(fn) {
         console.error(err);
         if (err && err.retryWithoutMirror) {
             setStatus(t_('Mirror unreachable — asking NVD'));
+            // Still searching: the Export menu stays off until the retry,
+            // which clears this as its first act, has finished.
+            retryHold = true;
             setTimeout(runSearch, 0);
             return false;
         }
@@ -991,24 +1151,46 @@ async function withLoader(fn) {
     }
 }
 
+// `searching` is true from the first line of a search (before the mirror
+// wait) until the last search or Load more in flight has settled. A search
+// handed to retryWithoutMirror stays "searching" through the hand-over.
+function beginSearching() {
+    searchOps++;
+    retryHold = false;
+    searching = true;
+    syncExportMenu();
+}
+function endSearching() {
+    searchOps = Math.max(0, searchOps - 1);
+    searching = searchOps > 0 || retryHold;
+    syncExportMenu();
+}
+
 async function runSearch() {
-    readControls();
-    writeHash();
-    // Only a page that has not asked yet waits, and never for long.
-    await loadMirror();
-    streams = buildStreams();
-    records = []; shown = []; seenIds = new Set(); retrievedAt = null; visible = LIST_STEP;
-    partial = false; usedSources = {}; searchError = null;
-    // Clear the previous result set without going through renderList(), which
-    // would flash "no CVEs in this window" before the first request returns.
-    document.getElementById('resultsList').innerHTML = '';
-    document.getElementById('loadMoreWrap').innerHTML = '';
-    if (!(await withLoader(() => fetchStreams(streams, paint, FIRST_PAGE)))) return;
-    // Every NVD stream has painted its first small page; now each is topped up
-    // to the page the list has always loaded, so nothing is lost but the wait.
-    const topUp = streams.filter((s) => (s.source || 'nvd') === 'nvd' && !s.done && s.loaded < PAGE_SIZE);
-    if (topUp.length && !(await withLoader(() => fetchStreams(topUp, paint, (s) => PAGE_SIZE - s.loaded)))) return;
-    paint();
+    beginSearching();
+    exportOutcome = '';
+    try {
+        readControls();
+        writeHash();
+        // Only a page that has not asked yet waits, and never for long.
+        await loadMirror();
+        streams = buildStreams();
+        lastQuery = { keyword: state.keyword, timeframe: state.timeframe, severity: state.severity, streams: streams };
+        records = []; shown = []; seenIds = new Set(); retrievedAt = null; visible = LIST_STEP;
+        partial = false; usedSources = {}; searchError = null;
+        // Clear the previous result set without going through renderList(), which
+        // would flash "no CVEs in this window" before the first request returns.
+        document.getElementById('resultsList').innerHTML = '';
+        document.getElementById('loadMoreWrap').innerHTML = '';
+        if (!(await withLoader(() => fetchStreams(streams, paint, FIRST_PAGE)))) return;
+        // Every NVD stream has painted its first small page; now each is topped up
+        // to the page the list has always loaded, so nothing is lost but the wait.
+        const topUp = streams.filter((s) => (s.source || 'nvd') === 'nvd' && !s.done && s.loaded < PAGE_SIZE);
+        if (topUp.length && !(await withLoader(() => fetchStreams(topUp, paint, (s) => PAGE_SIZE - s.loaded)))) return;
+        paint();
+    } finally {
+        endSearching();
+    }
 }
 
 function paint() {
@@ -1024,7 +1206,12 @@ async function loadMore() {
     // never costs more than the rate limiter's whole window.
     const next = streams.filter((s) => !s.done && s.loaded < (s.total || 0)).slice(0, RATE_MAX);
     if (!next.length) return;
-    if (await withLoader(() => fetchStreams(next, paint))) paint();
+    searchOps++; searching = true; syncExportMenu();
+    try {
+        if (await withLoader(() => fetchStreams(next, paint))) paint();
+    } finally {
+        endSearching();
+    }
 }
 
 // Both are the reader working with the list: a mode a link asked for no
@@ -1327,9 +1514,17 @@ function buildYearOptions() {
     if (keep) sel.value = keep;
 }
 
-function exportRows() {
-    return shown.map((c) => {
+// One row per record for the CSV, the JSON and the report. The first ten
+// keys keep their order from earlier exports; the enrichment columns follow.
+// A feed that is not loaded gives null, never false or 0: "not in KEV" and
+// "KEV not consulted" are different claims, and so are EPSS 0 and no EPSS.
+// Numbers stay numbers, which is what CveReport.csvCell decides by.
+function exportRows(list = shown) {
+    const ready = enrichReady();
+    return list.map((c) => {
         const m = metricsOf(c);
+        const k = ready.kev ? kevOf(c) : null;
+        const e = ready.epss ? epssOf(c) : null;
         return {
             id: c.id,
             published: c.published,
@@ -1341,10 +1536,32 @@ function exportRows() {
             vector: m && m.d ? (m.d.vectorString || '') : '',
             cwe: cweList(c).join(' '),
             description: englishDesc(c),
+            cvssSource: m ? m.src : '',
+            kev: ready.kev ? !!k : null,
+            kevAdded: k && k.added ? String(k.added).slice(0, 10) : '',
+            kevDue: k && k.due ? String(k.due).slice(0, 10) : '',
+            ransomware: k ? !!k.ransomware : '',
+            epss: e && isFinite(e.score) ? Number(e.score) : null,
+            epssPercentile: e && isFinite(e.percentile) ? Number(e.percentile) : null,
         };
     });
 }
 
+// The five facts CveReport.summarize counts, without building a whole row.
+function lightRow(c) {
+    const ready = enrichReady();
+    const k = ready.kev ? kevOf(c) : null;
+    const e = ready.epss ? epssOf(c) : null;
+    return {
+        severity: severityOf(c) || '',
+        kev: ready.kev ? !!k : null,
+        ransomware: !!(k && k.ransomware),
+        epss: e && isFinite(e.score) ? Number(e.score) : null,
+        published: c.published || '',
+    };
+}
+
+// Used by the quick views' Export; the search exports go through CveReport.
 function download(name, mime, text) {
     const a = document.createElement('a');
     const url = URL.createObjectURL(new Blob([text], { type: mime }));
@@ -1354,14 +1571,168 @@ function download(name, mime, text) {
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
 }
 
-const csvCell = (v) => {
-    const s = String(v === null || v === undefined ? '' : v);
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-};
+/* ---- the search report ---------------------------------------------- */
 
-function stamp() {
-    const d = retrievedAt || new Date();
-    return d.toISOString().slice(0, 10);
+const SORT_EN = {
+    'date-new': 'Date (Newest First)', 'date-old': 'Date (Oldest First)',
+    'score-high': 'Score (High to Low)', 'score-low': 'Score (Low to High)',
+};
+const TIMEFRAME_EN = { '7': 'Last 7 Days', '30': 'Last 30 Days', '90': 'Last 90 Days' };
+
+// The text of the <option> whose value is `v`, as the page shows it now.
+function optionText(id, v) {
+    const sel = document.getElementById(id);
+    const o = sel && Array.prototype.filter.call(sel.options, (x) => x.value === v)[0];
+    return o ? o.textContent.trim() : '';
+}
+
+// Everything CveReport needs, as one plain object built at click time. The
+// module reads no page globals, so this is the whole of what a report claims.
+function reportInput({ tr, full }) {
+    const ready = enrichReady();
+    const q = lastQuery || { keyword: '', timeframe: state.timeframe, severity: '', streams: [] };
+    const sources = { nvd: !!usedSources.nvd, local: !!usedSources.local, recent: !!usedSources.recent };
+    const kevApplied = !!(state.kev && ready.kev);
+    const epssApplied = ready.epss ? state.epssMin : 0;
+    const starts = q.streams.map((s) => new Date(s.start).getTime()).filter(isFinite);
+    const ends = q.streams.map((s) => new Date(s.end).getTime()).filter(isFinite);
+    const nf = nvdFailed();
+    const answered = q.streams.filter((s) => typeof s.total === 'number');
+    const counts = {
+        listed: shown.length,
+        loaded: records.length,
+        returned: answered.reduce((n, s) => n + s.total, 0),
+        notLoaded: answered.reduce((n, s) => n + Math.max(0, s.total - s.loaded), 0),
+        lowerBound: nf.failed > 0,
+    };
+    const englishTimeframe = /^\d{4}$/.test(q.timeframe) ? 'Year ' + q.timeframe : (TIMEFRAME_EN[q.timeframe] || q.timeframe);
+    const cap = window.CveReport.REPORT_ROW_CAP;
+    return {
+        generatedAt: new Date(),
+        query: {
+            keyword: q.keyword,
+            timeframe: q.timeframe,
+            timeframeLabel: tr.iso ? englishTimeframe : (optionText('timeSelect', q.timeframe) || timeframeLabel(q.timeframe)),
+            windowStart: starts.length ? new Date(Math.min.apply(null, starts)).toISOString() : null,
+            windowEnd: ends.length ? new Date(Math.max.apply(null, ends)).toISOString() : null,
+            severity: q.severity || '',
+            floorAtSource: floorAtSource(),
+            kevRequested: !!state.kev,
+            kevApplied: kevApplied,
+            epssRequested: state.epssMin,
+            epssApplied: epssApplied,
+            kevCatalogue: kevApplied ? (ready.generated || null) : null,
+            epssModelDate: epssApplied ? (ready.date || null) : null,
+            // The order on screen now, which is the order of `shown`.
+            sortLabel: tr.iso ? (SORT_EN[state.sort] || state.sort) : (optionText('sortBy', state.sort) || state.sort),
+        },
+        sources: sources,
+        nvdFailed: nf,
+        localSnapshot: sources.local && corpusMeta && corpusMeta.snapshot ? String(corpusMeta.snapshot) : null,
+        mirrorSnapshot: sources.recent && mirrorManifest && mirrorManifest.snapshot ? String(mirrorManifest.snapshot) : null,
+        mirror: sources.recent ? mirrorBase() : null,
+        // Never a snapshot's query time: only NVD has a retrieval moment.
+        retrievedAt: sources.nvd ? retrievedAt : null,
+        partial: partial,
+        // The plan sets completeThrough whenever it asks NVD for a tail; it
+        // is a limit of the answer only when that tail failed.
+        completeThrough: partial ? completeThrough : null,
+        searchError: searchError ? String(searchError.message || searchError) : null,
+        counts: counts,
+        enrich: {
+            kev: !!ready.kev, kevDate: ready.generated || '',
+            epss: !!ready.epss, epssDate: ready.date || '',
+            kevAgeDays: ready.kev ? daysOld(ready.generated) : null,
+            epssAgeDays: ready.epss ? daysOld(ready.date) : null,
+        },
+        notes: coverageNotes(tr).notes,
+        provenance: provenanceText(tr),
+        emptyReason: shown.length ? '' : emptyMessage(tr),
+        summary: window.CveReport.summarize(shown.map(lightRow)),
+        rows: full ? exportRows(shown) : exportRows(shown.slice(0, cap)),
+        incomplete: partial || nf.failed > 0 || !!searchError || counts.notLoaded > 0,
+    };
+}
+
+const isDashboard = () => (window.CveModes ? CveModes.current() !== 'list' : state.mode !== 'list');
+
+// '' when the last search can be reported, otherwise why not.
+function reportBlocker() {
+    if (!window.CveReport) return t_('Could not build the report.');
+    if (searching) return t_('A search is running — wait for it to finish.');
+    if (!lastQuery) return t_('Run a search first.');
+    if (listDirty) return t_('This search has not run yet — open the List.');
+    if (searchError && !records.length) return tf('Could not reach %1.', 'NVD');
+    return '';
+}
+
+function syncExportMenu() {
+    const why = reportBlocker();
+    ['reportBtn', 'exportCsv', 'exportJson'].forEach((id) => {
+        const b = document.getElementById(id);
+        if (b) b.disabled = !!why;
+    });
+    const note = document.getElementById('exportWhy');
+    if (note) {
+        const text = why || [isDashboard() ? t_('Covers the last List search, not the chart on screen.') : '', exportOutcome]
+            .filter(Boolean).join(' ');
+        note.textContent = text;
+        note.hidden = !text;
+    }
+    const watch = document.getElementById('watchReportBtn');
+    if (watch) watch.hidden = !window.CveWatch;
+}
+
+// The outcome goes to the status line and stays in the menu, so it is still
+// there when the menu is opened again.
+function report(msg) {
+    setStatus(msg);
+    exportOutcome = msg;
+    syncExportMenu();
+}
+
+async function openSearchReport() {
+    if (reportBlocker()) return syncExportMenu();
+    // Synchronous, inside the click: anything after an await is a pop-up.
+    const tab = CveReport.openTab();
+    setStatus(t_('Building report…'));
+    await tick();
+    if (reportBlocker()) { try { if (tab) tab.close(); } catch (e) { /* gone */ } return syncExportMenu(); }
+    try {
+        const input = reportInput({ tr: PAGE_TR, full: false });
+        const html = CveReport.toHtml(CveReport.model(input), document.documentElement.lang || 'en');
+        const r = CveReport.deliver(tab, html, CveReport.fileStem(input, 'report') + '.html');
+        report(r && r.opened ? t_('Report opened in a new tab.')
+            : t_('Pop-ups are blocked, so the report was downloaded instead.'));
+    } catch (e) {
+        console.error(e);
+        try { if (tab) tab.close(); } catch (e2) { /* gone */ }
+        report(t_('Could not build the report.'));
+    }
+}
+
+// CSV and JSON carry every listed row, and are built in English (EN_TR):
+// the column names, keys and caveats of a data file do not follow the page.
+async function saveSearchData(kind) {
+    if (reportBlocker()) return syncExportMenu();
+    const status = document.getElementById('apiStatus');
+    const before = status ? status.textContent : '';
+    setStatus(t_('Building report…'));
+    await tick();
+    if (reportBlocker()) { setStatus(before); return syncExportMenu(); }
+    try {
+        const input = reportInput({ tr: EN_TR, full: true });
+        const m = CveReport.model(input, { lang: 'en' });
+        const stem = CveReport.fileStem(input, 'data');
+        const ok = kind === 'csv'
+            ? CveReport.save(stem + '.csv', 'text/csv;charset=utf-8', CveReport.toCsvParts(m))
+            : CveReport.save(stem + '.json', 'application/json', CveReport.toJsonParts(m));
+        if (ok === true) { setStatus(before); exportOutcome = ''; syncExportMenu(); }
+        else report(tf('This browser would not save the file: %1', ok));
+    } catch (e) {
+        console.error(e);
+        report(t_('Could not build the report.'));
+    }
 }
 
 /* ---- quick views ----------------------------------------------------
@@ -1746,44 +2117,43 @@ function wire() {
         }
     });
 
-    document.getElementById('exportCsv').addEventListener('click', () => {
-        const rows = exportRows();
-        if (!rows.length) return;
-        const cols = Object.keys(rows[0]);
-        const csv = [cols.join(',')].concat(
-            rows.map((r) => cols.map((k) => csvCell(r[k])).join(','))).join('\n');
-        download('cve-' + stamp() + '.csv', 'text/csv;charset=utf-8', csv);
+    // Export ▾. carino-ui.js registered its own click first and opens the
+    // panel; this one runs in the same click, before paint, so the items
+    // are already in the right state when the panel appears.
+    document.getElementById('exportMenuBtn').addEventListener('click', syncExportMenu);
+    // carino-ui closes the panel on an outside click, and the navbar its More
+    // menu, from bubbling listeners that a stopPropagation (the Filters
+    // drawer, the Export button itself) never lets run. Close both in the
+    // capture phase instead, before any handler can stop the click.
+    document.addEventListener('click', (e) => {
+        const wrap = document.getElementById('exportWrap');
+        const panel = document.getElementById('exportMenu');
+        if (panel && !panel.hidden && wrap && !wrap.contains(e.target)) {
+            panel.hidden = true;
+            document.getElementById('exportMenuBtn').setAttribute('aria-expanded', 'false');
+        }
+        const more = document.getElementById('cnMoreMenu');
+        if (more && !more.hidden && !more.contains(e.target)
+            && !(e.target.closest && e.target.closest('[aria-controls="cnMoreMenu"]'))) {
+            more.hidden = true;
+            const mb = document.querySelector('[aria-controls="cnMoreMenu"]');
+            if (mb) mb.setAttribute('aria-expanded', 'false');
+        }
+    }, true);
+    document.getElementById('reportBtn').addEventListener('click', openSearchReport);
+    document.getElementById('exportCsv').addEventListener('click', () => saveSearchData('csv'));
+    document.getElementById('exportJson').addEventListener('click', () => saveSearchData('json'));
+    document.getElementById('watchReportBtn').addEventListener('click', () => {
+        if (window.CveWatch) CveWatch.open();
     });
-
-    document.getElementById('exportJson').addEventListener('click', () => {
-        const rows = exportRows();
-        if (!rows.length) return;
-        download('cve-' + stamp() + '.json', 'application/json', JSON.stringify({
-            source: 'NVD CVE API 2.0',
-            retrieved: (retrievedAt || new Date()).toISOString(),
-            // Every filter that decided which rows are below, not only the ones
-            // that were asked of the source: the KEV and EPSS floors are applied
-            // after the fetch (§10), and an export whose stamp omits them cannot
-            // be recomputed from it. `false`/`0` rather than omitted, so the
-            // reader can tell "not filtered" from "an older export".
-            query: {
-                keyword: state.keyword,
-                timeframe: state.timeframe,
-                minimumSeverity: state.severity || 'any',
-                kevOnly: !!(state.kev && enrichReady().kev),
-                minimumEpss: enrichReady().epss ? state.epssMin : 0,
-            },
-            loaded: records.length,
-            matched: streams.reduce((n, s) => n + (s.total || 0), 0),
-            results: rows,
-        }, null, 2));
-    });
+    syncExportMenu();
 
     if (window.CveDataUI) {
         try { CveDataUI.init(); } catch (e) { console.error(e); }
     }
-    // Watchlists build their own dialog and are reached from the Data dialog,
-    // so this is the whole of their wiring here: the sidebar gains nothing.
+    // Watchlists build their own dialog and are reached from the Data dialog
+    // and from Export ▾, so this is the whole of their wiring here: the
+    // sidebar gains nothing.
     if (window.CveWatch) {
         try { CveWatch.init(); } catch (e) { console.error(e); }
     }
@@ -1846,6 +2216,10 @@ window.cveRerender = function () {
     document.getElementById('modeSwitch').setAttribute('aria-label', t_('Mode'));
     // The dashboards load the new language's strings before they redraw.
     if (window.CveModes) CveModes.relang();
+    // A remembered export outcome is in the old language; the status line
+    // (i18n.js applyStatusI18n) carries it in the new one.
+    exportOutcome = '';
+    syncExportMenu();
 };
 
 // Drill-down from Trends and Projection: the only way a chart reaches the
@@ -1880,11 +2254,14 @@ window.cveApplyListFilters = function (f) {
 <script src="js/cve-sources.js" defer></script>
 <script src="js/cve-enrich.js" defer></script>
 <script src="js/cve-data-ui.js" defer></script>
+<!-- The report builder comes before cve-watch, which borrows its fileSlug. -->
+<script src="js/cve-report.js" defer></script>
 <script src="js/cve-watch.js" defer></script>
 <!-- The mode switch. Everything the three dashboard modes need is injected
      by CveModes behind the list, after its first search has settled. -->
 <script src="js/cve-modes.js" defer></script>
 <script src="carino-navbar.js" data-app="CVE" data-repo="CVE" defer></script>
+<script src="carino-ui.js" defer></script>
 <script src="carino-lang.js" defer></script>
 <script src="i18n.js" defer></script>
 <script>
