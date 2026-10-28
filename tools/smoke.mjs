@@ -253,10 +253,12 @@ function nvdFixture() {
         const d = new Date(t0 - i * 9 * 3600 * 1000).toISOString().slice(0, 23);
         vulns.push({ cve: {
             id: 'CVE-2026-' + String(10000 + i), sourceIdentifier: 'smoke@example.org',
-            published: d, lastModified: d, vulnStatus: 'Analyzed',
+            // Every third record is local and needs a login and a click, and
+            // every fifth is still waiting on NVD: check 19 narrows by both.
+            published: d, lastModified: d, vulnStatus: i % 5 === 0 ? 'Awaiting Analysis' : 'Analyzed',
             descriptions: [{ lang: 'en', value: 'Smoke-test record ' + i + ': a buffer overflow in an example component allows a remote attacker to do something it should not. <user_id> stays escaped.' }],
             metrics: { cvssMetricV31: [{ source: 'nvd@nist.gov', type: 'Primary', cvssData: {
-                version: '3.1', vectorString: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+                version: '3.1', vectorString: i % 3 === 0 ? 'CVSS:3.1/AV:L/AC:L/PR:L/UI:R/S:U/C:H/I:H/A:H' : 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
                 baseScore: score[s], baseSeverity: s } }] },
             weaknesses: [{ source: 'nvd@nist.gov', type: 'Primary', description: [{ lang: 'en', value: 'CWE-' + (79 + i % 7) }] }],
             references: [],
@@ -836,13 +838,12 @@ async function main() {
         });
 
         /* 4. Observatory -------------------------------------------------------- */
-        await step(4, 'Observatory: seven panels, all built, stamped, chip bar, rail link', async (expect) => {
+        await step(4, 'Observatory: seven panels, all built, stamped, chip bar', async (expect) => {
             const page = await boot('/index.html' + withQ());
             try {
                 await page.waitFor(readyJs('obs'), READY_MS, 'obs button enabled');
-                // The rail's link opens the same mode.
-                await page.click('#obsLink');
-                await page.waitFor(drawn('obs'), DRAW_MS, 'Observatory draws from the rail link');
+                await page.click('#modeSwitch [data-mode="obs"]');
+                await page.waitFor(drawn('obs'), DRAW_MS, 'Observatory draws from its mode button');
                 expect(/(^#|&)m=obs(&|$)/.test(await hashOf(page)), 'hash lacks m=obs: ' + await hashOf(page));
                 const panels = await page.eval(`[].map.call(document.querySelectorAll('${SEL.obs} details.o-panel'),function(d){
                     return d.id+':'+d.open+':'+(d.querySelector('.o-panel-body').childNodes.length>0);})`);
@@ -1141,7 +1142,7 @@ async function main() {
             const page = await boot('/index.html' + withQ());
             try {
                 const a = await page.eval(st);
-                await page.click('#obsLink');
+                await page.eval("CveModes.request('obs', { push: true, urgent: true })");
                 const b = await page.eval(st);
                 if (a.obs !== 'ready') {
                     expect(b.len === a.len + 1, 'the rail link while loading added no history entry: ' + a.len + ' → ' + b.len);
@@ -1159,7 +1160,7 @@ async function main() {
             const p2 = await boot('/index.html' + withQ());
             try {
                 const len = await p2.eval('history.length');
-                await p2.click('#obsLink');
+                await p2.eval("CveModes.request('obs', { push: true, urgent: true })");
                 await p2.waitFor(drawn('obs'), READY_MS, 'the Observatory opens by itself');
                 expect(await p2.eval('history.length') === len + 1, 'not one history entry for the rail link');
                 await p2.eval('history.back()');
@@ -1245,7 +1246,7 @@ async function main() {
                 // As before the fourth button: one row, 81 px (f114b4a).
                 expect(a.rows === 1 && a.hh <= 81, 'the list header at 1366 px: ' + a.rows + ' rows, ' + a.hh + ' px (one row of 81 px before the fourth button)');
                 if (await page.eval("CveModes.state('obs')") !== 'ready') {
-                    await page.click('#obsLink');
+                    await page.eval("CveModes.request('obs', { push: true, urgent: true })");
                     const b = await page.eval(geo);
                     expect(!(await page.eval("document.getElementById('modeNote').hidden")), 'no note after the rail link');
                     expect(b.card === a.card && b.count === a.count && b.hh === a.hh, 'the note moved the list: ' + JSON.stringify(a) + ' → ' + JSON.stringify(b));
@@ -1401,6 +1402,56 @@ async function main() {
                 const errs = realErrors(page, origin);
                 expect(errs.length === 0, 'console errors:\n       ' + errs.slice(0, 8).join('\n       '));
             } finally { await page.close(); }
+        });
+
+        /* 19. Narrow the results, and Data in the navbar ----------------------- */
+        await step(19, 'Narrow the results: network, login, CWE and NVD status filter the loaded list, ride in the hash and clear; Data opens from the navbar; the rail has no Observatory line', async (expect) => {
+            const page = await boot('/index.html' + withQ());
+            try {
+                await page.waitFor(`searching === false && shown.length === 200`, SLOW_NVD_MS + DRAW_MS * 2, 'the 200-record list');
+                expect(await page.eval("!document.getElementById('obsLink') && !document.getElementById('provenance')"), 'the rail still has the Observatory or provenance line');
+                expect(await page.eval("!!document.querySelector('#carinoNav #dataBtn')"), 'no Data button in the navbar');
+
+                // Fixture: every third record is AV:L/PR:L/UI:R, every fifth awaits analysis,
+                // CWE-79…85 in turn.
+                const want = (f) => Array.from({ length: 200 }, (_, i) => i).filter(f).length;
+                await page.click('#fNet');
+                await page.waitFor('shown.length < 200', DRAW_MS, 'the network filter');
+                expect(await page.eval('shown.length') === want((i) => i % 3 !== 0), 'network: ' + await page.eval('shown.length'));
+                expect(/(^#|&)n=1(&|$)/.test(await hashOf(page)), 'hash lacks n=1: ' + await hashOf(page));
+                const opt = await page.eval("[].map.call(document.getElementById('fCwe').options,function(o){return o.textContent;})");
+                expect(opt.some((t) => /^CWE-79 · Cross-site scripting \(\d+\)$/.test(t)), 'CWE options: ' + JSON.stringify(opt.slice(0, 4)));
+                await page.eval("(function(){var s=document.getElementById('fCwe');s.value='CWE-79';s.dispatchEvent(new Event('change'));})()");
+                await page.eval("(function(){var s=document.getElementById('fStatus');s.value='done';s.dispatchEvent(new Event('change'));})()");
+                const n3 = want((i) => i % 3 !== 0 && i % 7 === 0 && i % 5 !== 0);
+                expect(await page.eval('shown.length') === n3, 'network + CWE-79 + analysed: ' + await page.eval('shown.length') + ', want ' + n3);
+                const h = await hashOf(page);
+                expect(/w=CWE-79/.test(h) && /v=done/.test(h), 'hash: ' + h);
+                expect(await page.eval("!document.getElementById('fClear').hidden"), 'Clear filters is hidden while filters are on');
+                // Nothing left: the empty message names the filters.
+                await page.click('#fNoUi');
+                await page.eval("(function(){var s=document.getElementById('fStatus');s.value='wait';s.dispatchEvent(new Event('change'));})()");
+                const empty = await page.eval(textOf('#resultsList'));
+                const n4 = want((i) => i % 3 !== 0 && i % 7 === 0 && i % 5 === 0);
+                if (!n4) expect(/No user action needed/.test(empty), 'empty message: ' + empty.slice(0, 160));
+                await page.click('#fClear');
+                expect(await page.eval('shown.length') === 200, 'Clear filters left ' + await page.eval('shown.length'));
+                expect(!/(^#|&)(n|w|v|u)=/.test(await hashOf(page)), 'hash after Clear: ' + await hashOf(page));
+                expect(await page.eval("document.getElementById('fClear').hidden"), 'Clear filters still shown');
+
+                // Data, from the navbar.
+                await page.click('#dataBtn');
+                await page.waitFor("!!document.getElementById('dataDialog') && document.getElementById('dataDialog').open", DRAW_MS, 'the Data dialog');
+                await page.eval("document.getElementById('dataDialog').close()");
+            } finally { await page.close(); }
+            // A link carrying the filters restores them.
+            const p2 = await boot('/index.html' + withQ() + '#n=1&a=1&w=CWE-80&v=wait');
+            try {
+                await p2.waitFor('searching === false && records.length === 200', SLOW_NVD_MS + DRAW_MS * 2, 'the linked list');
+                const c = await p2.eval("({n:document.getElementById('fNet').checked,a:document.getElementById('fNoAuth').checked,w:document.getElementById('fCwe').value,v:document.getElementById('fStatus').value,len:shown.length})");
+                const n5 = Array.from({ length: 200 }, (_, i) => i).filter((i) => i % 3 !== 0 && i % 7 === 1 && i % 5 === 0).length;
+                expect(c.n && c.a && c.w === 'CWE-80' && c.v === 'wait' && c.len === n5, 'from the link: ' + JSON.stringify(c) + ', want ' + n5);
+            } finally { await p2.close(); }
         });
     } finally {
         await cdp.send('Browser.close').catch(() => {});

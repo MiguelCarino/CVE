@@ -13,6 +13,7 @@ Live at **https://cve.carino.systems**
 - **Your own views** — *Save current view* names whatever is on screen and stars it; star or unstar anything to choose the five in the sidebar; export and import the whole set as JSON.
 - **Timeframe filter** — Last 7 / 30 / 90 days (default 90), or any single year from the current one back to 1999.
 - **Minimum severity filter** — Any / Low+ / Medium+ / High+ / Critical only. It is a **floor**: `High+` includes Critical.
+- **Narrow the results** — filters below Search that apply at once to the records already loaded, without asking the source again: **KEV only**, **EPSS ≥**, **Known ransomware use** (KEV's flag), **Attackable over the network** (`AV:N`), **No login needed** (`PR:N`, or `Au:N` in CVSS v2), **No user action needed** (`UI:N`; a v2-only record cannot clear it, v2 has no such metric), **Weakness (CWE)** (the CWEs in the loaded records, most frequent first, with counts) and **NVD analysis** (analysed / not yet). The hash and saved views carry them (`r n a u w v`), the report lists them under *Narrowed to*, and **Clear filters** resets them all. KEV, EPSS and ransomware are disabled until their feed is loaded.
 - **Honest counts** — the results header reads *"Showing X of Y loaded (Z matched)"*, where Z is the API's own `totalResults`. **Load more** fetches the next page of each unfinished query.
 - **Client-side sorting** — re-sort loaded results by date or CVSS score without re-querying. Unrated CVEs have no score, so they sort last in both directions rather than as a 0.
 - **CVE cards** — CVE ID (linked to `nvd.nist.gov/vuln/detail/<id>`), NVD analysis status, description with an expand control, the CVSS vector and its source, CWE chips linking to `cwe.mitre.org`, published/updated dates, a copy-ID button, and a score box coloured by severity.
@@ -30,7 +31,7 @@ Live at **https://cve.carino.systems**
 - **KEV and EPSS** — cards carry a **KEV** badge when CISA lists the CVE as known-exploited, and an EPSS chip with the exploitation probability. Both are filterable. Neither service can be fetched by a browser at all; see [Exploitation and probability](#exploitation-and-probability--kev-and-epss).
 - **Four modes: List · Trends · Projection · Observatory** — the results header switches the column between the classic list (the default, unchanged), [**Trends**](index.html#m=trends) — the corpus as it moves, with interactive charts — [**Projection**](index.html#m=proj), four counts extended forward with their measured track record, and [**Observatory**](index.html#m=obs), the seven whole-corpus panels. The list loads first and alone; the other three are prepared behind it once its first search has settled, and each button opens only when its mode is ready. None of them downloads a shard. See [The observatory](#the-observatory--trends-projection-observatory).
 - **Watchlists** — name a list of product terms once and ask *"what is new for my estate since my last sync?"* Exports to CSV, JSON and a printable HTML, each stamped with the snapshot it was computed from.
-- **Provenance** — the rail states where the data came from and when it was retrieved.
+- **Provenance** — the navbar's source badge and Updated stamp say where the data came from and when; the **Data** button's tooltip carries the full line.
 - **Mobile drawer** — below 900px the filter rail becomes an off-canvas drawer toggled by a ☰ button injected into the shared navbar; it closes via the scrim, the Escape key, or automatically when a quick-tag or Search is tapped.
 - **API status indicator** — Fetching… / per-request progress / rate-limit countdown / NVD API Connected / API Error.
 
@@ -80,8 +81,8 @@ Two tiers: **full** (~30 MB, with descriptions, full offline keyword search) and
 no descriptions, keyword matching falls back to id and product keys). The client offers `full` by
 default but warns and prefers `index` when `navigator.deviceMemory < 4` or the viewport is ≤900 px.
 
-Open the **Data source** dialog from the provenance line in the rail to download, update, delete, or
-point the client at your own mirror. The sidebar gains no controls.
+Open the **Data source** dialog from the **Data** button in the navbar to download, update, delete, or
+point the client at your own mirror.
 
 Publisher, wire format and the self-hosting bundle: **[CVE-data](https://github.com/MiguelCarino/CVE-data)**
 — `CONTRACT.md` is the schema of record, `SEAMS.md` walks one record end to end.

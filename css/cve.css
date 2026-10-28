@@ -141,21 +141,25 @@ body > .cve-actions { display: none; }
 
 .hint { margin: 6px 0 0; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; line-height: 1.5; color: var(--text-muted); }
 
-/* Provenance: where the data came from and when. Pinned to the bottom
-   of the rail — a number without a retrieval time is a rumour. */
-.prov { display: block; width: 100%; margin-top: auto; padding: 16px 0 0; background: none; border: none; border-top: 1px solid var(--cve-hair); font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: var(--text-muted); text-align: left; cursor: pointer; }
-.prov:hover { color: #eab308; }
-.prov:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* A link, not a control: the rail still gains no settings (§6). */
-.prov-link { display: block; padding-top: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; line-height: 1.6; color: var(--text-muted); text-decoration: none; }
-.prov-link:hover, .prov-link:focus-visible { color: #eab308; }
-.controls .data-foot { margin: 10px 0 0; padding-bottom: 0; border-top-color: var(--cve-hair); }
+.controls .data-foot { margin: auto 0 0; padding-bottom: 0; border-top-color: var(--cve-hair); }
 .coverage { padding: 3px 8px; border: 1px solid rgba(234,179,8,0.45); border-radius: 5px; background: rgba(234,179,8,0.08); color: #fcd34d; font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; }
 .coverage:empty { display: none; }
 
-/* KEV and EPSS filter what is already loaded, so they belong beside the
-   severity floor rather than in a group of their own: one compact row
-   inside an existing group, and the rail keeps its height. */
+/* Narrow the results: display filters over what is already loaded. KEV and
+   EPSS share one row; the rest are a column of checks and two selects. */
+.refine { gap: 4px; padding-top: 16px; border-top: 1px solid var(--cve-hair); }
+.refine .chk { display: flex; align-items: center; gap: 8px; margin: 0; padding: 3px 0; font-family: var(--mono); font-size: 0.74rem; font-weight: 400; color: var(--text-sec); text-transform: none; letter-spacing: 0; cursor: pointer; }
+.refine .chk:hover { color: var(--text); }
+.controls .refine .chk input[type="checkbox"] { width: auto; margin: 0; padding: 0; accent-color: #eab308; cursor: pointer; }
+.refine .chk:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
+.refine .sub-lbl { margin-top: 8px; }
+.controls .refine select { padding: 8px 10px; font-size: 0.76rem; }
+.refine .sev-extra { margin: 4px 0 2px; }
+.refine .hint { margin-top: 8px; }
+.link-btn { display: inline; margin: 0 0 0 4px; padding: 0; background: none; border: 0; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.link-btn[hidden] { display: none; }
+.link-btn:hover { color: #fbbf24; }
+.link-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .sev-extra { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .sev-extra label { margin: 0; }
 .sev-extra .chk { display: flex; align-items: center; gap: 6px; color: var(--text-sec); cursor: pointer; }

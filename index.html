@@ -39,6 +39,9 @@
     <div class="cve-actions" data-carino-actions>
         <span class="live-chip" id="srcChip" title="Data source" data-priority="2">LOADING</span>
         <span class="fresh" id="freshStamp" hidden></span>
+        <!-- The data settings (CveDataUI: mirror, local corpus, feeds). Its
+             title is the provenance line the rail used to carry. -->
+        <button type="button" class="cs-btn" id="dataBtn" data-priority="2"><span aria-hidden="true">⛁</span> <span class="mb-t" data-i18n>Data</span></button>
         <!-- Export ▾ (carino-ui.js opens and closes it). Report… opens
              #reportDialog, where the sections are picked: the last List search
              and any Trends, Projection or Observatory section. CSV and JSON
@@ -95,35 +98,49 @@
                         <option value="HIGH" data-i18n>High+</option>
                         <option value="CRITICAL" data-i18n>Critical only</option>
                     </select>
-
-                    <!-- Two display filters over what is already loaded, folded
-                         into the severity group on purpose (§10): they never
-                         enter the query plan, so they take effect on change
-                         rather than on Search, and the rail gains no section.
-                         Both are disabled until the feed behind them is loaded;
-                         the reason lives in their title. -->
-                    <div class="sev-extra">
-                        <label class="chk" for="kevOnly">
-                            <input type="checkbox" id="kevOnly">
-                            <span data-i18n>KEV only</span>
-                        </label>
-                        <label class="epss-lbl" for="epssMin" data-i18n>EPSS ≥</label>
-                        <select id="epssMin">
-                            <option value="" data-i18n>Any</option>
-                            <option value="0.1">0.10</option>
-                            <option value="0.5">0.50</option>
-                            <option value="0.9">0.90</option>
-                        </select>
-                    </div>
-
                     <p class="hint" data-i18n>A floor, not an exact match: High+ includes Critical.</p>
                 </div>
 
                 <button type="submit" class="search-btn" data-i18n>Search Database</button>
             </form>
 
-            <button type="button" class="prov" id="provenance"></button>
-            <a class="prov-link" href="#m=obs" id="obsLink" data-i18n>Observatory — the whole corpus, charted →</a>
+            <!-- Narrow the results: display filters over the records already
+                 loaded (§10). They never enter the query plan, so they take
+                 effect on change rather than on Search; the hash and saved
+                 views carry them. KEV, EPSS and ransomware are disabled until
+                 the feed behind them is loaded, with the reason in the title. -->
+            <div class="control-group refine" role="group" aria-labelledby="refineLbl">
+                <label id="refineLbl" data-i18n>Narrow the results</label>
+                <div class="sev-extra">
+                    <label class="chk" for="kevOnly">
+                        <input type="checkbox" id="kevOnly">
+                        <span data-i18n>KEV only</span>
+                    </label>
+                    <label class="epss-lbl" for="epssMin" data-i18n>EPSS ≥</label>
+                    <select id="epssMin">
+                        <option value="" data-i18n>Any</option>
+                        <option value="0.1">0.10</option>
+                        <option value="0.5">0.50</option>
+                        <option value="0.9">0.90</option>
+                    </select>
+                </div>
+                <label class="chk" for="fRansom"><input type="checkbox" id="fRansom"> <span data-i18n>Known ransomware use</span></label>
+                <label class="chk" for="fNet"><input type="checkbox" id="fNet"> <span data-i18n>Attackable over the network</span></label>
+                <label class="chk" for="fNoAuth"><input type="checkbox" id="fNoAuth"> <span data-i18n>No login needed</span></label>
+                <label class="chk" for="fNoUi"><input type="checkbox" id="fNoUi"> <span data-i18n>No user action needed</span></label>
+                <label class="sub-lbl" for="fCwe" data-i18n>Weakness (CWE)</label>
+                <select id="fCwe">
+                    <option value="" data-i18n>Any weakness</option>
+                </select>
+                <label class="sub-lbl" for="fStatus" data-i18n>NVD analysis</label>
+                <select id="fStatus">
+                    <option value="" data-i18n>Any status</option>
+                    <option value="done" data-i18n>Analysed by NVD</option>
+                    <option value="wait" data-i18n>Not analysed yet</option>
+                </select>
+                <p class="hint"><span data-i18n>Applied at once to the loaded results, from each record’s CVSS vector, CWE and NVD status.</span>
+                    <button type="button" class="link-btn" id="fClear" hidden data-i18n>Clear filters</button></p>
+            </div>
             <!-- The source line. Its last sentence is the wording the NVD API
                  terms of use require. -->
             <p class="data-foot"><span data-i18n>Data: NIST NVD (live, or a synced snapshot), CISA KEV and FIRST EPSS.</span> <span data-i18n>Runs in your browser; nothing is uploaded.</span> <span data-i18n>Monitoring only, not advice.</span> <span data-i18n>This product uses data from the NVD API but is not endorsed or certified by the NVD.</span></p>
@@ -270,8 +287,14 @@ const SEV_ORDER = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 // `mode` and `section` are the results column's mode (js/cve-modes.js) and the
 // part of it on screen. They live in the same hash so a link opens both, and
 // only CveModes.setMode() changes them.
-const state = { keyword: '', timeframe: '90', severity: '', sort: 'date-new', kev: false, epssMin: 0,
-    mode: 'list', section: '' };
+//
+// The sidebar's "Narrow the results" group adds six more of the same kind:
+// `net`, `noauth`, `noui` (read from the CVSS vector), `rw` (KEV's known
+// ransomware use), `cwe` (one CWE id) and `st` ('done' analysed by NVD,
+// 'wait' not yet). REFINE_DEFAULTS is their "off".
+const REFINE_DEFAULTS = { net: false, noauth: false, noui: false, rw: false, cwe: '', st: '' };
+const state = Object.assign({ keyword: '', timeframe: '90', severity: '', sort: 'date-new', kev: false, epssMin: 0,
+    mode: 'list', section: '' }, REFINE_DEFAULTS);
 
 const DEFAULT_MIRROR = 'https://cve-data.carino.systems';
 
@@ -304,6 +327,7 @@ let visible = LIST_STEP;
 // interchangeable — emptyMessage() names the one that actually happened.
 let floorCount = 0;
 let kevCount = 0;
+let epssCount = 0;           // after the EPSS floor, before the sidebar's other filters
 let seenIds = new Set();
 let retrievedAt = null;
 // The last search's failure, for the navbar badge; cleared when a search starts.
@@ -671,12 +695,104 @@ function englishDesc(c) {
     const en = ds.filter((d) => d.lang === 'en')[0];
     return ((en || ds[0] || {}).value) || '';
 }
-function cweList(c) {
+function cweAll(c) {
     const out = [];
     ((c && c.weaknesses) || []).forEach((w) => (w.description || []).forEach((d) => {
         if (/^CWE-\d+$/.test(d.value) && out.indexOf(d.value) === -1) out.push(d.value);
     }));
-    return out.slice(0, 4);
+    return out;
+}
+const cweList = (c) => cweAll(c).slice(0, 4);
+
+/* ---- Narrow the results ---------------------------------------------
+   The sidebar's display filters beyond KEV and EPSS. Each reads a field
+   every source carries (NVD, the mirror's recent weeks and the local corpus
+   all keep the vector, the CWE ids and vulnStatus). A CVSS v2 vector says
+   Au:N where v3 says PR:N, and has no user-interaction metric at all, so a
+   v2-only record cannot clear "No user action needed". */
+
+const vectorOf = (c) => { const m = metricsOf(c); return m && m.d ? (m.d.vectorString || '') : ''; };
+const hasMetric = (c, re) => re.test(vectorOf(c));
+const ANALYSED = /^(Analyzed|Modified)$/i;
+const isAnalysed = (c) => ANALYSED.test((c && c.vulnStatus) || '');
+
+// MITRE's names for the weaknesses seen most, shortened. Data, like the ids:
+// English in every locale. Anything else is listed by its id alone.
+const CWE_NAMES = {
+    'CWE-20': 'Improper input validation', 'CWE-22': 'Path traversal', 'CWE-59': 'Link following',
+    'CWE-74': 'Injection', 'CWE-77': 'Command injection', 'CWE-78': 'OS command injection',
+    'CWE-79': 'Cross-site scripting', 'CWE-89': 'SQL injection', 'CWE-94': 'Code injection',
+    'CWE-119': 'Memory buffer bounds', 'CWE-120': 'Classic buffer overflow', 'CWE-121': 'Stack buffer overflow',
+    'CWE-122': 'Heap buffer overflow', 'CWE-125': 'Out-of-bounds read', 'CWE-190': 'Integer overflow',
+    'CWE-200': 'Information exposure', 'CWE-269': 'Improper privilege management', 'CWE-276': 'Incorrect default permissions',
+    'CWE-284': 'Improper access control', 'CWE-285': 'Improper authorization', 'CWE-287': 'Improper authentication',
+    'CWE-295': 'Improper certificate validation', 'CWE-306': 'Missing authentication', 'CWE-312': 'Cleartext storage',
+    'CWE-319': 'Cleartext transmission', 'CWE-327': 'Broken cryptography', 'CWE-352': 'Cross-site request forgery',
+    'CWE-362': 'Race condition', 'CWE-400': 'Uncontrolled resource consumption', 'CWE-401': 'Memory leak',
+    'CWE-416': 'Use after free', 'CWE-434': 'Unrestricted file upload', 'CWE-444': 'Request smuggling',
+    'CWE-476': 'NULL pointer dereference', 'CWE-502': 'Deserialization of untrusted data', 'CWE-532': 'Sensitive data in logs',
+    'CWE-601': 'Open redirect', 'CWE-611': 'XML external entities', 'CWE-639': 'Authorization bypass via user key',
+    'CWE-668': 'Exposure to wrong sphere', 'CWE-770': 'Allocation without limits', 'CWE-787': 'Out-of-bounds write',
+    'CWE-798': 'Hard-coded credentials', 'CWE-835': 'Infinite loop', 'CWE-843': 'Type confusion',
+    'CWE-862': 'Missing authorization', 'CWE-863': 'Incorrect authorization', 'CWE-918': 'Server-side request forgery',
+    'CWE-1021': 'Clickjacking', 'CWE-1321': 'Prototype pollution', 'CWE-1333': 'Regular expression DoS',
+};
+const cweLabel = (id) => (CWE_NAMES[id] ? id + ' · ' + CWE_NAMES[id] : id);
+
+const refineActive = () => Object.keys(REFINE_DEFAULTS).some((k) => state[k] !== REFINE_DEFAULTS[k]);
+
+// The tests the current filters ask for. Ransomware needs the KEV list; with
+// none loaded it is not applied (an empty list would read as "none used in
+// ransomware"), and the header says so, as it does for KEV.
+function refineTests(ready) {
+    const tests = [];
+    if (state.net) tests.push((c) => hasMetric(c, /(^|\/)AV:N(\/|$)/));
+    if (state.noauth) tests.push((c) => hasMetric(c, /(^|\/)(PR|Au):N(\/|$)/));
+    if (state.noui) tests.push((c) => hasMetric(c, /(^|\/)UI:N(\/|$)/));
+    if (state.rw && ready.kev) tests.push((c) => { const k = kevOf(c); return !!(k && k.ransomware); });
+    if (state.cwe) tests.push((c) => cweAll(c).indexOf(state.cwe) >= 0);
+    if (state.st) tests.push((c) => isAnalysed(c) === (state.st === 'done'));
+    return tests;
+}
+
+// The filters on, as words, for the report's search settings and the JSON.
+function refineLabels(tr) {
+    const out = [];
+    if (state.rw) out.push(tr.t_('Known ransomware use'));
+    if (state.net) out.push(tr.t_('Attackable over the network'));
+    if (state.noauth) out.push(tr.t_('No login needed'));
+    if (state.noui) out.push(tr.t_('No user action needed'));
+    if (state.cwe) out.push(cweLabel(state.cwe));
+    if (state.st) out.push(state.st === 'done' ? tr.t_('Analysed by NVD') : tr.t_('Not analysed yet'));
+    return out;
+}
+
+// The weakness list offers the CWEs in what is loaded, most frequent first,
+// with their counts; a CWE a link asked for stays listed even at zero.
+let cweFor = '';
+function syncCweOptions() {
+    const sel = document.getElementById('fCwe');
+    if (!sel) return;
+    const key = records.length + ':' + (records[0] ? records[0].id : '') + ':' + (records.length ? records[records.length - 1].id : '') + ':' + state.cwe;
+    if (key === cweFor && sel.options.length > 1) { sel.value = state.cwe; return; }
+    cweFor = key;
+    const n = new Map();
+    records.forEach((c) => cweAll(c).forEach((id) => n.set(id, (n.get(id) || 0) + 1)));
+    const top = [...n.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 40);
+    if (state.cwe && !top.some((e) => e[0] === state.cwe)) top.push([state.cwe, 0]);
+    while (sel.options.length > 1) sel.remove(1);
+    top.forEach(([id, count]) => {
+        const o = document.createElement('option');
+        o.value = id;
+        o.textContent = cweLabel(id) + ' (' + fmtNum(count) + ')';
+        sel.appendChild(o);
+    });
+    sel.value = state.cwe;
+}
+
+function syncRefineClear() {
+    const b = document.getElementById('fClear');
+    if (b) b.hidden = !(refineActive() || state.kev || state.epssMin > 0);
 }
 
 /* ---- enrichment: KEV and EPSS ----------------------------------------
@@ -725,6 +841,11 @@ function applyFilterSort() {
             return !!e && e.score >= epssMin;
         });
     }
+    epssCount = shown.length;
+    const tests = refineTests(ready);
+    if (tests.length) shown = shown.filter((c) => tests.every((f) => f(c)));
+    syncCweOptions();
+    syncRefineClear();
 
     const by = state.sort;
     shown.sort((a, b) => {
@@ -863,9 +984,13 @@ function emptyMessage(tr = PAGE_TR) {
         return tr.tf('None of the %1 records that cleared the severity floor are in the CISA KEV catalogue. KEV is about 0.44% of all CVEs, so filtering one page of NVD results to it usually finds none — over a local corpus the same question is exact.',
             trNum(tr, floorCount));
     }
-    if (state.epssMin > 0 && ready.epss) {
+    if (state.epssMin > 0 && ready.epss && !epssCount) {
         return tr.tf('None of the %1 records that cleared the earlier filters score %2 or higher in EPSS.',
             trNum(tr, kevCount), state.epssMin);
+    }
+    if (refineActive() && epssCount) {
+        return tr.tf('None of the %1 records that cleared the earlier filters match: %2.',
+            trNum(tr, epssCount), refineLabels(tr).join(' · '));
     }
     return floored;
 }
@@ -957,7 +1082,7 @@ function coverageNotes(tr = PAGE_TR) {
     // loaded, so an empty list is a fact about this page and not about the
     // catalogue. Over a local corpus it is exact and no note is needed.
     const ready = enrichReady();
-    if (state.kev && !ready.kev) {
+    if ((state.kev || state.rw) && !ready.kev) {
         notes.push(tr.t_('KEV list not loaded — that filter was not applied'));
     } else if (state.kev && usedSources.nvd) {
         notes.push(tr.tf('KEV filter covers the %1 loaded records only', trNum(tr, records.length)));
@@ -1019,9 +1144,8 @@ function provenanceText(tr = PAGE_TR) {
 }
 
 function renderProvenance() {
-    const prov = document.getElementById('provenance');
-    if (!prov) return;
-    prov.textContent = provenanceText();
+    const btn = document.getElementById('dataBtn');
+    if (btn) btn.title = provenanceText() + ' — ' + t_('Data settings');
     renderSourceChip();
 }
 
@@ -1356,10 +1480,9 @@ async function loadEnrichment() {
     if (records.length) paint();
 }
 
-// The two enrichment controls are meaningful only once the feed behind them
-// is loaded, so they are disabled until then and carry the reason in their
-// title — a tooltip rather than another line of hint, because §6 says the
-// rail does not grow.
+// The three feed-backed controls (KEV only, EPSS ≥, Known ransomware use)
+// are meaningful only once the feed behind them is loaded, so they are
+// disabled until then and carry the reason in their title.
 function syncEnrichControls() {
     const ready = enrichReady();
     const box = document.getElementById('kevOnly');
@@ -1367,6 +1490,13 @@ function syncEnrichControls() {
         box.disabled = !ready.kev;
         box.title = ready.kev
             ? tf('CISA Known Exploited Vulnerabilities, generated %1', String(ready.generated).slice(0, 10) || '—')
+            : t_('The KEV catalogue is not loaded, so this filter cannot be applied.');
+    }
+    const rw = document.getElementById('fRansom');
+    if (rw) {
+        rw.disabled = !ready.kev;
+        rw.title = ready.kev
+            ? t_('In the CISA KEV catalogue and marked as known to be used in ransomware campaigns.')
             : t_('The KEV catalogue is not loaded, so this filter cannot be applied.');
     }
     const sel = document.getElementById('epssMin');
@@ -1399,6 +1529,13 @@ function readEnrichControls() {
     const sel = document.getElementById('epssMin');
     const e = parseFloat(sel ? sel.value : '');
     state.epssMin = isFinite(e) && e > 0 ? e : 0;
+    const on = (id) => { const b = document.getElementById(id); return !!(b && b.checked); };
+    state.rw = on('fRansom');
+    state.net = on('fNet');
+    state.noauth = on('fNoAuth');
+    state.noui = on('fNoUi');
+    state.cwe = document.getElementById('fCwe').value || '';
+    state.st = document.getElementById('fStatus').value || '';
 }
 
 function writeControls() {
@@ -1410,6 +1547,14 @@ function writeControls() {
     document.getElementById('sortBy').value = state.sort;
     document.getElementById('kevOnly').checked = !!state.kev;
     setEpssOption(state.epssMin);
+    document.getElementById('fRansom').checked = !!state.rw;
+    document.getElementById('fNet').checked = !!state.net;
+    document.getElementById('fNoAuth').checked = !!state.noauth;
+    document.getElementById('fNoUi').checked = !!state.noui;
+    cweFor = '';
+    syncCweOptions();
+    document.getElementById('fStatus').value = state.st;
+    syncRefineClear();
 }
 
 // A shared link can carry any threshold (#e=0.37), and a select that silently
@@ -1440,6 +1585,12 @@ function writeHash(push) {
     if (state.sort !== 'date-new') p.set('o', state.sort);
     if (state.kev) p.set('k', '1');
     if (state.epssMin > 0) p.set('e', String(state.epssMin));
+    if (state.rw) p.set('r', '1');
+    if (state.net) p.set('n', '1');
+    if (state.noauth) p.set('a', '1');
+    if (state.noui) p.set('u', '1');
+    if (state.cwe) p.set('w', state.cwe);
+    if (state.st) p.set('v', state.st);
     // A mode a link asked for that is still loading stays in the hash, so
     // the link copied or reloaded meanwhile is still the link that was opened.
     const wait = state.mode === 'list' && window.CveModes ? CveModes.pending() : null;
@@ -1449,6 +1600,20 @@ function writeHash(push) {
     else if (wait && wait.x) p.set('x', wait.x);
     const h = p.toString();
     history[push ? 'pushState' : 'replaceState'](null, '', h ? '#' + h : location.pathname + location.search);
+}
+
+// The six narrowing filters from a hash or a saved view (the same short
+// keys). A value that is not one the page offers is no filter.
+function readRefine(get) {
+    const yes = (k) => get(k) === '1' || get(k) === 1 || get(k) === true || get(k) === 'true';
+    state.rw = yes('r');
+    state.net = yes('n');
+    state.noauth = yes('a');
+    state.noui = yes('u');
+    const w = String(get('w') || '');
+    state.cwe = /^CWE-\d{1,6}$/.test(w) ? w : '';
+    const v = String(get('v') || '');
+    state.st = v === 'done' || v === 'wait' ? v : '';
 }
 
 function readHash() {
@@ -1470,6 +1635,7 @@ function readHash() {
         // a link carrying one gets no filter rather than an invented bound.
         state.epssMin = isFinite(n) && n > 0 && n <= 1 ? n : 0;
     }
+    readRefine((k) => p.get(k));
     const mx = modeOf(p);
     state.mode = mx.m;
     state.section = mx.x;
@@ -1643,6 +1809,14 @@ function reportInput({ tr, full }) {
             epssApplied: epssApplied,
             kevCatalogue: kevApplied ? (ready.generated || null) : null,
             epssModelDate: epssApplied ? (ready.date || null) : null,
+            // The sidebar's narrowing filters: as words for the report, as
+            // values for the JSON. Ransomware counts as applied only with KEV.
+            narrowLabels: refineLabels(tr),
+            narrow: {
+                ransomware: !!(state.rw && ready.kev), ransomwareRequested: !!state.rw,
+                network: !!state.net, noLogin: !!state.noauth, noUserAction: !!state.noui,
+                cwe: state.cwe || null, nvdAnalysis: state.st === 'done' ? 'analysed' : state.st === 'wait' ? 'not-analysed' : null,
+            },
             // The order on screen now, which is the order of `shown`.
             sortLabel: tr.iso ? (SORT_EN[state.sort] || state.sort) : (optionText('sortBy', state.sort) || state.sort),
         },
@@ -2059,6 +2233,7 @@ function applyView(v) {
     state.kev = !!v.k;
     const e = parseFloat(v.e);
     state.epssMin = isFinite(e) && e > 0 && e <= 1 ? e : 0;
+    readRefine((k) => v[k]);
     leaveObs();
     writeControls();
     runSearch();
@@ -2190,6 +2365,8 @@ function saveCurrentView() {
         // of it — a saved "known exploited" view that forgot the KEV filter
         // would restore as a plain 90-day search and look like it worked.
         k: state.kev ? 1 : 0, e: state.epssMin,
+        r: state.rw ? 1 : 0, n: state.net ? 1 : 0, a: state.noauth ? 1 : 0, u: state.noui ? 1 : 0,
+        w: state.cwe, v: state.st,
     };
     views.custom.unshift(v);
     views.pins = [v.id].concat(pinIds().filter((id) => id !== v.id)).slice(0, MAX_PINS);
@@ -2268,13 +2445,6 @@ function wire() {
             writeHash,
         });
         document.getElementById('modeSwitch').setAttribute('aria-label', t_('Mode'));
-        // The rail's link into the observatory. A plain href still works with
-        // scripts off the page; with them, it is a mode change and the drawer
-        // closes behind it (the drawer script lists #obsLink).
-        document.getElementById('obsLink').addEventListener('click', (e) => {
-            e.preventDefault();
-            CveModes.request('obs', { push: true, urgent: true });
-        });
         if (wanted) CveModes.request(wanted.m, { section: wanted.x, push: false });
         window.addEventListener('popstate', onHistoryMove);
         window.addEventListener('hashchange', onHistoryMove);
@@ -2285,6 +2455,15 @@ function wire() {
     document.getElementById('sortBy').addEventListener('change', reSortList);
     document.getElementById('kevOnly').addEventListener('change', reFilterList);
     document.getElementById('epssMin').addEventListener('change', reFilterList);
+    ['fRansom', 'fNet', 'fNoAuth', 'fNoUi', 'fCwe', 'fStatus'].forEach((id) =>
+        document.getElementById(id).addEventListener('change', reFilterList));
+    document.getElementById('fClear').addEventListener('click', () => {
+        state.kev = false;
+        state.epssMin = 0;
+        Object.assign(state, REFINE_DEFAULTS);
+        writeControls();
+        reFilterList();
+    });
     // Off until a feed lands, with the reason in the tooltip.
     syncEnrichControls();
     document.getElementById('qvClose').addEventListener('click',
@@ -2352,7 +2531,7 @@ function wire() {
     if (window.CveWatch) {
         try { CveWatch.init(); } catch (e) { console.error(e); }
     }
-    document.getElementById('provenance').addEventListener('click', () => {
+    document.getElementById('dataBtn').addEventListener('click', () => {
         if (window.CveDataUI) CveDataUI.open();
     });
     // The dialog downloads, updates or deletes the corpus; when it does, the
@@ -2432,6 +2611,7 @@ window.cveApplyListFilters = function (f) {
     state.kev = !!f.k;
     state.timeframe = f.t !== undefined && f.t !== null ? String(f.t) : '90';
     state.epssMin = 0;
+    Object.assign(state, REFINE_DEFAULTS);
     writeControls();
     state.mode = 'list';
     state.section = '';
@@ -2486,7 +2666,7 @@ window.cveApplyListFilters = function (f) {
     scrim.addEventListener('click', close);
     window.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
     controls.addEventListener('click', function (e) {
-        if (MQ.matches && e.target.closest('.fchip, .search-btn, #obsLink')) close();
+        if (MQ.matches && e.target.closest('.fchip, .search-btn')) close();
     });
     var onChange = function () { if (!MQ.matches) close(); };
     if (MQ.addEventListener) MQ.addEventListener('change', onChange);
