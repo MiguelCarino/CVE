@@ -1261,7 +1261,7 @@ async function main() {
 
         /* 18. Export ▾ ------------------------------------------------------- */
         // No timing here: only what the menu offers when, and what it hands over.
-        await step(18, 'Export ▾: off while searching and before a search; the report opens in a tab with its CSP and footer; CSV and JSON names; dashboards say what is covered; Esc, Filters and Quick views still work', async (expect) => {
+        await step(18, 'Export ▾: off while searching and before a search; Report… picks sections, lists the CVEs only when asked, and opens in a tab with its CSP and footer; a dashboard section goes in as a copy; CSV and JSON names; dashboards say what is covered; Esc, Filters and Quick views still work', async (expect) => {
             const page = await boot('/index.html' + withQ(), { nvdMs: SLOW_NVD_MS });
             const key = async (k, code, vk) => {
                 await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk });
@@ -1292,20 +1292,37 @@ async function main() {
                     SLOW_NVD_MS + DRAW_MS * 2, 'the list, search settled');
                 // Before any search has finished (put back afterwards).
                 m = await page.eval('(function(){var q=lastQuery;lastQuery=null;syncExportMenu();var r=' + menu + ';lastQuery=q;syncExportMenu();return r;})()');
-                expect(m.off.every(Boolean) && /Run a search first/.test(m.why), 'no search yet: ' + JSON.stringify(m));
+                // Report… can still open on a dashboard that is ready; CSV and JSON cannot.
+                expect(m.off[1] && m.off[2] && /Run a search first/.test(m.why), 'no search yet: ' + JSON.stringify(m));
                 await page.click('#exportMenuBtn');
                 m = await page.eval(menu);
                 expect(m.off.every((v) => !v), 'items still off after the search: ' + JSON.stringify(m));
-                expect(!/Covers the last List search/.test(m.why), 'the dashboard note shows in the List');
+                expect(!/CSV and JSON cover the last List search/.test(m.why), 'the dashboard note shows in the List');
                 await key('Escape', 'Escape', 27);
 
                 // The report: a tab the page opens synchronously, then fills.
                 await page.eval(`(function(){window.__rep={};window.open=function(){return {closed:false,
                     location:{replace:function(u){window.__rep.url=u;}},document:{URL:'',readyState:'loading'},
                     close:function(){window.__rep.closed=true;},print:function(){}};};})()`);
+                const dlg = `(function(){var d=document.getElementById('reportDialog'),s=document.getElementById('rpSearch'),r=document.getElementById('rpRecords');
+                    return {open:d.open,search:!!(s&&s.checked&&!s.disabled),records:!!(r&&r.checked),
+                        dash:[].map.call(document.querySelectorAll('#rpGroups input[id^="rp-"]'),function(b){return b.id+(b.checked?'+':'');})};})()`;
                 await page.click('#reportBtn');
+                let dm = await page.eval(dlg);
+                expect(dm.open && dm.search && !dm.records, 'Report… in the List: ' + JSON.stringify(dm));
+                await page.click('#rpOpen');
                 await page.waitFor('!!(window.__rep && __rep.url)', DRAW_MS, 'the report handed to the tab');
+                const lean = await page.eval('fetch(__rep.url).then(function(r){return r.text();})');
+                expect(lean.includes('<h2>Summary</h2>') && !lean.includes('<table class="records">'), 'the CVEs are listed although not asked for');
+                // Asked for: at most the cap, never the whole list.
+                await page.eval('window.__rep={}');
+                await page.click('#reportBtn');
+                await page.click('#rpRecords');
+                await page.click('#rpOpen');
+                await page.waitFor('!!(window.__rep && __rep.url)', DRAW_MS, 'the report with records');
                 const html = await page.eval('fetch(__rep.url).then(function(r){return r.text();})');
+                const recRows = (html.split('<table class="records">')[1] || '').split('</table>')[0].split('<tr>').length - 2;
+                expect(recRows > 0 && recRows <= 200, 'records in the report: ' + recRows);
                 const head = html.slice(0, html.indexOf('<style'));
                 expect(/<title>[^<]+\d{4}-\d{2}-\d{2}<\/title>/.test(html), 'report title: ' + (html.match(/<title>[^<]*<\/title>/) || ['none'])[0]);
                 expect(/<meta http-equiv="Content-Security-Policy" content="default-src 'none'/.test(head), 'no CSP meta before the style');
@@ -1335,9 +1352,23 @@ async function main() {
                 await toMode(page, 'trends');
                 await page.click('#exportMenuBtn');
                 m = await page.eval(menu);
-                expect(m.open && /Covers the last List search/.test(m.why), 'in Trends: ' + JSON.stringify(m));
+                expect(m.open && /CSV and JSON cover the last List search/.test(m.why), 'in Trends: ' + JSON.stringify(m));
                 await key('Escape', 'Escape', 27);
                 expect(!(await page.eval(menu)).open, 'Esc did not close Export ▾ in Trends');
+                // Report… in Trends: its sections are offered, the one in view
+                // is ticked and the search is not; the copy is a section, not a script.
+                await page.click('#reportBtn');
+                dm = await page.eval(dlg);
+                expect(dm.open && !dm.search && dm.dash.some((x) => /^rp-trends-.*\+$/.test(x)), 'Report… in Trends: ' + JSON.stringify(dm));
+                await page.eval('window.__rep={}');
+                await page.click('#rpOpen');
+                await page.waitFor('!!(window.__rep && __rep.url)', DRAW_MS, 'the Trends report');
+                const dash = await page.eval('fetch(__rep.url).then(function(r){return r.text();})');
+                // Only the copied sections: the report's own Print button is outside them.
+                const copy = dash.slice(dash.indexOf('<div class="obs">'), dash.indexOf('<footer>'));
+                expect(copy.startsWith('<div class="obs"><section') && !/<script|<button|<input/i.test(copy) && !/<script/i.test(dash),
+                    'the Trends section copy: ' + JSON.stringify((copy.match(/.{0,60}<(script|button|input).{0,60}/i) || [copy.slice(0, 80)])[0]));
+                expect(!dash.includes('Search settings'), 'the search went into a Trends-only report');
                 await toMode(page, 'list');
 
                 // The rest of the page's Esc handling is untouched by carino-ui.js.

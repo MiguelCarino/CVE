@@ -39,13 +39,15 @@
     <div class="cve-actions" data-carino-actions>
         <span class="live-chip" id="srcChip" title="Data source" data-priority="2">LOADING</span>
         <span class="fresh" id="freshStamp" hidden></span>
-        <!-- Export ▾ (carino-ui.js opens and closes it). Every item covers the
-             last List search; syncExportMenu() disables them, with the reason
-             in #exportWhy, until there is a finished search to report. -->
+        <!-- Export ▾ (carino-ui.js opens and closes it). Report… opens
+             #reportDialog, where the sections are picked: the last List search
+             and any Trends, Projection or Observatory section. CSV and JSON
+             cover the last List search; syncExportMenu() disables them, with
+             the reason in #exportWhy, until there is a finished search. -->
         <div class="cs-menu" id="exportWrap" data-priority="2">
             <button type="button" id="exportMenuBtn" class="cs-btn" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenu"><span aria-hidden="true">⤓</span> <span class="mb-t" data-i18n>Export</span> <span class="cs-caret" aria-hidden="true">▾</span></button>
             <div id="exportMenu" class="cs-menu-panel" role="menu" aria-labelledby="exportMenuBtn" hidden>
-                <button type="button" id="reportBtn" class="cs-menu-item" role="menuitem"><span aria-hidden="true">📋</span> <span data-i18n>Search report</span> <span class="cs-menu-note" data-i18n>printable</span></button>
+                <button type="button" id="reportBtn" class="cs-menu-item" role="menuitem"><span aria-hidden="true">📋</span> <span data-i18n>Report…</span> <span class="cs-menu-note" data-i18n>by section</span></button>
                 <div class="cs-menu-div"></div>
                 <button type="button" id="exportCsv" class="cs-menu-item" role="menuitem"><span aria-hidden="true">📄</span> CSV <span class="cs-menu-note" data-i18n>every row</span></button>
                 <button type="button" id="exportJson" class="cs-menu-item" role="menuitem"><span aria-hidden="true">📄</span> JSON <span class="cs-menu-note" data-i18n>every row</span></button>
@@ -180,6 +182,24 @@
             </section>
         </div>
     </div>
+
+    <!-- Report… — which sections go into the printable report. The groups
+         are drawn by openReportDialog() from what the page holds right now. -->
+    <dialog id="reportDialog" class="qv-dialog rp-dialog" aria-labelledby="rpTitle">
+        <div class="qv-inner">
+            <div class="qv-head">
+                <h2 id="rpTitle" data-i18n>Report</h2>
+                <button type="button" class="qv-x" id="rpClose" aria-label="Close">&times;</button>
+            </div>
+            <p class="qv-sub" data-i18n>Pick the sections to include. The report opens in a new tab, ready to print or save as PDF.</p>
+            <div id="rpGroups" class="rp-groups"></div>
+            <p class="rp-why" id="rpWhy" role="status"></p>
+            <div class="qv-foot">
+                <button type="button" class="btn-ghost" id="rpCancel" data-i18n>Cancel</button>
+                <button type="button" class="btn-ghost rp-go" id="rpOpen"><span aria-hidden="true">📋</span> <span data-i18n>Open report</span></button>
+            </div>
+        </div>
+    </dialog>
 
     <dialog id="viewsDialog" class="qv-dialog">
         <div class="qv-inner">
@@ -1668,19 +1688,210 @@ function reportBlocker() {
 
 function syncExportMenu() {
     const why = reportBlocker();
-    ['reportBtn', 'exportCsv', 'exportJson'].forEach((id) => {
+    ['exportCsv', 'exportJson'].forEach((id) => {
         const b = document.getElementById(id);
         if (b) b.disabled = !!why;
     });
+    // Report… opens as soon as anything can go in it: the last search, or a
+    // dashboard that has finished loading.
+    const rb = document.getElementById('reportBtn');
+    if (rb) rb.disabled = !!why && !reportModes().some((m) => m.ready);
     const note = document.getElementById('exportWhy');
     if (note) {
-        const text = why || [isDashboard() ? t_('Covers the last List search, not the chart on screen.') : '', exportOutcome]
+        const text = [why || (isDashboard() ? t_('CSV and JSON cover the last List search.') : ''), exportOutcome]
             .filter(Boolean).join(' ');
         note.textContent = text;
         note.hidden = !text;
     }
     const watch = document.getElementById('watchReportBtn');
     if (watch) watch.hidden = !window.CveWatch;
+}
+
+/* ---- Report… — the report by section ---------------------------------
+
+   One dialog picks what goes in: the last List search (its settings,
+   provenance and summary, and the CVEs themselves only when asked — the
+   first REPORT_ROW_CAP, never the whole list) and any section of Trends,
+   Projection or Observatory that has been built. A dashboard section is
+   copied from the page as drawn (CveReport.sectionHtml), so the paper shows
+   the range and view on screen. The dialog opens with the section in view
+   ticked: the search on the List, the current section on a dashboard. */
+
+const REPORT_MODES = [
+    { id: 'trends', host: 'obsTrends', label: () => t_('Trends') },
+    { id: 'proj', host: 'obsProj', label: () => t_('Projection') },
+    { id: 'obs', host: 'obsCorpus', label: () => t_('Observatory') },
+];
+
+// A section's name as its heading shows it: the h2 of a panel, the number
+// and kicker of an Observatory drawer, the summary of any other drawer.
+function sectionTitle(node) {
+    const h = node.querySelector(':scope > h2')
+        || node.querySelector(':scope > summary .panel-num')
+        || node.querySelector(':scope > summary');
+    return (h ? h.textContent : node.getAttribute('data-x') || '').replace(/\s+/g, ' ').trim();
+}
+
+// The sections each dashboard holds right now, outermost [data-x] only.
+function reportModes() {
+    return REPORT_MODES.map((m) => {
+        const ready = !!(window.CveModes && CveModes.state(m.id) === 'ready');
+        const host = document.getElementById(m.host);
+        const secs = ready && host
+            ? Array.prototype.filter.call(host.querySelectorAll('[data-x]'),
+                (n) => !(n.parentElement && n.parentElement.closest('[data-x]')) && !n.hidden)
+                .map((n) => ({ x: n.getAttribute('data-x'), node: n, title: sectionTitle(n) }))
+            : [];
+        return { id: m.id, label: m.label(), ready: ready && secs.length > 0, state: window.CveModes ? CveModes.state(m.id) : null, secs };
+    });
+}
+
+function rpBox(id, text, checked, note) {
+    const lab = document.createElement('label');
+    lab.className = 'rp-item';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.id = id;
+    box.checked = !!checked;
+    lab.appendChild(box);
+    const span = document.createElement('span');
+    span.textContent = text;
+    lab.appendChild(span);
+    if (note) {
+        const n = document.createElement('small');
+        n.className = 'rp-note';
+        n.textContent = note;
+        lab.appendChild(n);
+    }
+    return { lab, box };
+}
+
+function rpGroup(title) {
+    const fs = document.createElement('fieldset');
+    fs.className = 'rp-group';
+    const lg = document.createElement('legend');
+    lg.textContent = title;
+    fs.appendChild(lg);
+    return fs;
+}
+
+let rpSections = [];   // [{box, mode, label, node}] while the dialog is open
+
+function rpSync() {
+    const search = document.getElementById('rpSearch');
+    const rec = document.getElementById('rpRecords');
+    if (rec) {
+        rec.disabled = !search || !search.checked;
+        if (rec.disabled) rec.checked = false;
+    }
+    document.querySelectorAll('#rpGroups input[data-all]').forEach((all) => {
+        const mine = rpSections.filter((s) => s.mode === all.getAttribute('data-all'));
+        const on = mine.filter((s) => s.box.checked).length;
+        all.checked = on === mine.length && on > 0;
+        all.indeterminate = on > 0 && on < mine.length;
+    });
+    const any = (search && search.checked) || rpSections.some((s) => s.box.checked);
+    document.getElementById('rpOpen').disabled = !any;
+    document.getElementById('rpWhy').textContent = any ? '' : t_('Pick at least one section.');
+}
+
+function openReportDialog() {
+    const d = document.getElementById('reportDialog');
+    const host = document.getElementById('rpGroups');
+    host.textContent = '';
+    rpSections = [];
+    document.getElementById('rpClose').setAttribute('aria-label', t_('Close'));
+    const mode = window.CveModes ? CveModes.current() : 'list';
+
+    // The last List search.
+    const fs = rpGroup(t_('List search'));
+    const why = reportBlocker();
+    const s = rpBox('rpSearch', t_('Search summary'), !why && mode === 'list',
+        why || t_('Search settings, provenance, severity counts and caveats.'));
+    s.box.disabled = !!why;
+    fs.appendChild(s.lab);
+    const n = shown.length;
+    const r = rpBox('rpRecords', t_('List the CVEs'), false,
+        n > CveReport.REPORT_ROW_CAP
+            ? tf('Only the first %1 of %2, in the order on screen. CSV and JSON carry them all.', CveReport.REPORT_ROW_CAP, n)
+            : tf('%1 records, in the order on screen.', n));
+    r.lab.classList.add('rp-sub');
+    fs.appendChild(r.lab);
+    host.appendChild(fs);
+
+    // Each dashboard, section by section.
+    reportModes().forEach((m) => {
+        const g = rpGroup(m.label);
+        if (!m.ready) {
+            const p = document.createElement('p');
+            p.className = 'rp-note';
+            p.textContent = m.state === 'failed' ? t_('Could not load — open it to see why.') : t_('Still loading — try again in a moment.');
+            g.appendChild(p);
+            host.appendChild(g);
+            return;
+        }
+        const all = rpBox('rpAll-' + m.id, t_('All sections'), false);
+        all.box.setAttribute('data-all', m.id);
+        all.lab.classList.add('rp-all');
+        g.appendChild(all.lab);
+        const here = mode === m.id ? (state.section || '').split('-')[0] : null;
+        m.secs.forEach((sec) => {
+            const b = rpBox('rp-' + m.id + '-' + sec.x, sec.title, here !== null && (!here || sec.x === here));
+            b.lab.classList.add('rp-sub');
+            g.appendChild(b.lab);
+            rpSections.push({ box: b.box, mode: m.id, label: m.label, node: sec.node });
+        });
+        all.box.addEventListener('change', () => {
+            rpSections.filter((x) => x.mode === m.id).forEach((x) => { x.box.checked = all.box.checked; });
+            rpSync();
+        });
+        host.appendChild(g);
+    });
+    host.onchange = rpSync;
+    rpSync();
+    if (!d.open) d.showModal();
+}
+
+// The dashboards' stylesheet as text, for the copied sections. Same origin,
+// so its rules are readable; an unreadable sheet only costs the styling.
+function obsCssText() {
+    const sheet = Array.prototype.find.call(document.styleSheets, (x) => x.href && /\/css\/cve-obs\.css(\?|$)/.test(x.href));
+    try { return sheet ? Array.prototype.map.call(sheet.cssRules, (r) => r.cssText).join('\n') : ''; }
+    catch (e) { return ''; }
+}
+
+async function openReport() {
+    const search = document.getElementById('rpSearch');
+    const withSearch = !!(search && search.checked && !reportBlocker());
+    const withRecords = withSearch && document.getElementById('rpRecords').checked;
+    const picked = rpSections.filter((s) => s.box.checked);
+    if (!withSearch && !picked.length) return rpSync();
+    // Synchronous, inside the click: anything after an await is a pop-up.
+    const tab = CveReport.openTab();
+    document.getElementById('reportDialog').close();
+    setStatus(t_('Building report…'));
+    await tick();
+    try {
+        const lang = document.documentElement.lang || 'en';
+        const input = withSearch ? reportInput({ tr: PAGE_TR, full: false }) : null;
+        const sections = picked.filter((s) => s.node.isConnected)
+            .map((s) => ({ group: s.label, html: CveReport.sectionHtml(s.node, lang) }));
+        const snap = window.CveModes && typeof CveModes.snapshot === 'function'
+            ? (picked.map((s) => CveModes.snapshot(s.mode)).filter(Boolean)[0] || '') : '';
+        const html = CveReport.toHtml(input ? CveReport.model(input) : null, lang,
+            { records: withRecords, sections, css: sections.length ? obsCssText() : '', snapshot: snap, generatedAt: new Date() });
+        const modes = [...new Set(picked.map((s) => s.mode))];
+        const name = input
+            ? CveReport.fileStem(input, 'report') + (modes.length ? '-' + modes.join('-') : '') + '.html'
+            : 'cve-report-' + modes.join('-') + '-' + CveReport.todayISO(new Date()) + '.html';
+        const r = CveReport.deliver(tab, html, name);
+        report(r && r.opened ? t_('Report opened in a new tab.')
+            : t_('Pop-ups are blocked, so the report was downloaded instead.'));
+    } catch (e) {
+        console.error(e);
+        try { if (tab) tab.close(); } catch (e2) { /* gone */ }
+        report(t_('Could not build the report.'));
+    }
 }
 
 // The outcome goes to the status line and stays in the menu, so it is still
@@ -1691,25 +1902,6 @@ function report(msg) {
     syncExportMenu();
 }
 
-async function openSearchReport() {
-    if (reportBlocker()) return syncExportMenu();
-    // Synchronous, inside the click: anything after an await is a pop-up.
-    const tab = CveReport.openTab();
-    setStatus(t_('Building report…'));
-    await tick();
-    if (reportBlocker()) { try { if (tab) tab.close(); } catch (e) { /* gone */ } return syncExportMenu(); }
-    try {
-        const input = reportInput({ tr: PAGE_TR, full: false });
-        const html = CveReport.toHtml(CveReport.model(input), document.documentElement.lang || 'en');
-        const r = CveReport.deliver(tab, html, CveReport.fileStem(input, 'report') + '.html');
-        report(r && r.opened ? t_('Report opened in a new tab.')
-            : t_('Pop-ups are blocked, so the report was downloaded instead.'));
-    } catch (e) {
-        console.error(e);
-        try { if (tab) tab.close(); } catch (e2) { /* gone */ }
-        report(t_('Could not build the report.'));
-    }
-}
 
 // CSV and JSON carry every listed row, and are built in English (EN_TR):
 // the column names, keys and caveats of a data file do not follow the page.
@@ -2140,7 +2332,10 @@ function wire() {
             if (mb) mb.setAttribute('aria-expanded', 'false');
         }
     }, true);
-    document.getElementById('reportBtn').addEventListener('click', openSearchReport);
+    document.getElementById('reportBtn').addEventListener('click', openReportDialog);
+    document.getElementById('rpOpen').addEventListener('click', openReport);
+    ['rpClose', 'rpCancel'].forEach((id) => document.getElementById(id).addEventListener('click',
+        () => document.getElementById('reportDialog').close()));
     document.getElementById('exportCsv').addEventListener('click', () => saveSearchData('csv'));
     document.getElementById('exportJson').addEventListener('click', () => saveSearchData('json'));
     document.getElementById('watchReportBtn').addEventListener('click', () => {
