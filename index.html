@@ -27,9 +27,225 @@
     <script type="application/json" id="carino-head-i18n">{"es": {"title": "Buscar CVE — base de vulnerabilidades NVD | CVE Radar Pro", "desc": "Busca vulnerabilidades de seguridad CVE en la NVD del NIST: puntuaciones CVSS, filtros y tendencias, rápido y con uso sin conexión, en tu navegador."}, "pt-BR": {"title": "Buscar CVE — banco de vulnerabilidades NVD | CVE Radar Pro", "desc": "Pesquise vulnerabilidades de segurança CVE na NVD do NIST: pontuações CVSS, filtros e tendências, rápido e com uso offline, no navegador."}, "ja": {"title": "CVE検索 — NVD脆弱性DB | CVE Radar Pro", "desc": "NIST NVDのCVE脆弱性を検索。CVSSスコア、フィルター、傾向を高速表示、オフラインでも使えるブラウザツール。"}, "ru": {"title": "Поиск CVE — база уязвимостей NVD | CVE Radar Pro", "desc": "Поиск уязвимостей CVE в базе NIST NVD: оценки CVSS, фильтры и тренды — быстро, с работой офлайн, прямо в браузере."}}</script>
     <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebApplication", "name": "CVE Database", "url": "https://cve.carino.systems/", "description": "Search CVE security vulnerabilities from the NIST NVD — CVSS scores, filters and trends, fast and offline-capable, in your browser.", "operatingSystem": "Any (runs in a web browser)", "isAccessibleForFree": true, "author": {"@type": "Person", "name": "Miguel Cariño", "url": "https://carino.systems/"}}</script>
     <!-- /carino:head -->
+    <!-- Theme before first paint, so neither theme flashes the other:
+         ?theme=gold|color (review links; not stored) > carino-theme cookie
+         (shared across *.carino.systems) > localStorage > Gold & Black. -->
+    <meta name="theme-color" content="#050505" id="carinoThemeColor">
+    <script>
+    (function () {
+      var d = document.documentElement, t = null;
+      function pick(v) { return v === 'gold' ? 'gold' : (v === 'color' || v === 'colour') ? 'color' : null; }
+      try { t = pick(new URLSearchParams(location.search).get('theme')); } catch (e) {}
+      if (!t) { try { var m = document.cookie.match(/(?:^|;\s*)carino-theme=([^;]*)/); if (m) t = pick(decodeURIComponent(m[1])); } catch (e) {} }
+      if (!t) { try { t = pick(localStorage.getItem('carino-theme')); } catch (e) {} }
+      t = t || 'gold';
+      d.setAttribute('data-carino-theme', t);
+      var dark = d.getAttribute('data-theme') !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+      var meta = document.getElementById('carinoThemeColor');
+      if (meta) meta.content = t === 'gold' ? '#050505' : (dark ? '#0e1420' : '#eef3fc');
+    })();
+    </script>
     <link rel="stylesheet" href="fonts/carino-fonts.css">
     <link rel="stylesheet" href="carino-ui.css">
     <link rel="stylesheet" href="css/cve.css">
+    <!-- Colourful theme + the switch; nothing applies until data-carino-theme="color". -->
+    <link rel="stylesheet" href="carino-theme.css">
+    <style>
+        /* Colourful: carino-theme.css remaps the tokens, so everything that reads
+           one follows; these are the values in css/cve.css, css/cve-obs.css
+           (linked later by js/cve-modes.js; the theme attribute outranks it)
+           and the dialogs' injected styles that were written for black. */
+        :root[data-carino-theme="color"] { --cve-hair: var(--border); }
+        :root[data-carino-theme="color"] select option { background: var(--bg-card); color: var(--text); }
+        :root[data-carino-theme="color"] input:focus,
+        :root[data-carino-theme="color"] select:focus { box-shadow: 0 0 0 3px var(--accent-glow); }
+        :root[data-carino-theme="color"] button.search-btn { color: var(--ct-on-accent); }
+        :root[data-carino-theme="color"] button.search-btn:hover { background-color: var(--ct-accent-strong); box-shadow: var(--ct-shadow-1); }
+        :root[data-carino-theme="color"] .cve-item { border-left-color: var(--border); }
+        :root[data-carino-theme="color"] .cve-item:hover { border-top-color: var(--border-hv); border-right-color: var(--border-hv); border-bottom-color: var(--border-hv); box-shadow: var(--ct-shadow-2); }
+        :root[data-carino-theme="color"] .pill.cve-ransom { background: var(--err); border-color: var(--err); color: var(--ct-on-accent); }
+        /* severity: the same scale, deepened so the score reads on white */
+        :root[data-carino-theme="color"] .low { border-left-color: var(--ok); } :root[data-carino-theme="color"] .low .score-val { color: var(--ok); }
+        :root[data-carino-theme="color"] .medium { border-left-color: var(--warn); } :root[data-carino-theme="color"] .medium .score-val { color: var(--warn); }
+        :root[data-carino-theme="color"] .high { border-left-color: var(--ct-amber); } :root[data-carino-theme="color"] .high .score-val { color: var(--ct-amber); }
+        :root[data-carino-theme="color"] .critical { border-left-color: var(--err); } :root[data-carino-theme="color"] .critical .score-val { color: var(--err); }
+        :root[data-carino-theme="color"] .pending { border-left-color: var(--text-muted); }
+        :root[data-carino-theme="color"] .loader-overlay { background: color-mix(in srgb, var(--bg) 82%, transparent); }
+        :root[data-carino-theme="color"] .controls { box-shadow: none; }
+        :root[data-carino-theme="color"] .controls.open { box-shadow: var(--ct-shadow-3); }
+        :root[data-carino-theme="color"] #cveScrim { background: var(--ct-scrim); }
+        :root[data-carino-theme="color"] .coverage { border-color: var(--accent-dim); background: var(--accent-faint); color: var(--accent); }
+        :root[data-carino-theme="color"] .controls .refine .chk input[type="checkbox"],
+        :root[data-carino-theme="color"] .controls .sev-extra input[type="checkbox"],
+        :root[data-carino-theme="color"] .qv-dialog .rp-item input[type="checkbox"],
+        :root[data-carino-theme="color"] #dataDialog .dd-tier input { accent-color: var(--accent); }
+        :root[data-carino-theme="color"] .link-btn:hover { color: var(--ct-accent-strong); }
+        :root[data-carino-theme="color"] .mode-note { box-shadow: var(--ct-shadow-2); }
+
+        /* Quick views and Report…: dialogs on cards, not black */
+        :root[data-carino-theme="color"] .qv-dialog { border-color: var(--border); background: var(--bg-card); color: var(--text-sec); box-shadow: var(--ct-shadow-3); }
+        :root[data-carino-theme="color"] .qv-dialog::backdrop { background: var(--ct-scrim); }
+        :root[data-carino-theme="color"] .qv-head h2,
+        :root[data-carino-theme="color"] .qv-go,
+        :root[data-carino-theme="color"] .rp-item { color: var(--text); }
+        :root[data-carino-theme="color"] .qv-x,
+        :root[data-carino-theme="color"] .qv-dialog .btn-ghost { border-color: var(--border); color: var(--text-sec); }
+        :root[data-carino-theme="color"] .qv-x:hover,
+        :root[data-carino-theme="color"] .qv-dialog .btn-ghost:hover,
+        :root[data-carino-theme="color"] .qv-dialog .rp-go { border-color: var(--accent); color: var(--accent); }
+        :root[data-carino-theme="color"] .qv-dialog input { background: var(--bg-elev); border-color: var(--border); color: var(--text); }
+        :root[data-carino-theme="color"] .qv-dialog input::placeholder { color: var(--text-muted); }
+        :root[data-carino-theme="color"] .qv-dialog input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        :root[data-carino-theme="color"] .qv-sub,
+        :root[data-carino-theme="color"] .qv-group,
+        :root[data-carino-theme="color"] .qv-go small,
+        :root[data-carino-theme="color"] .qv-act,
+        :root[data-carino-theme="color"] .qv-none,
+        :root[data-carino-theme="color"] .qv-note,
+        :root[data-carino-theme="color"] .rp-group legend,
+        :root[data-carino-theme="color"] .rp-item input:disabled + span,
+        :root[data-carino-theme="color"] .rp-note { color: var(--text-muted); }
+        :root[data-carino-theme="color"] .rp-item.rp-all { color: var(--text-sec); }
+        :root[data-carino-theme="color"] .qv-item:hover { background: var(--ct-hover); border-color: var(--border); }
+        :root[data-carino-theme="color"] .rp-item:hover { background: var(--ct-hover); }
+        :root[data-carino-theme="color"] .qv-act:hover,
+        :root[data-carino-theme="color"] .qv-act.on,
+        :root[data-carino-theme="color"] .rp-why { color: var(--accent); }
+        :root[data-carino-theme="color"] .qv-foot { border-top-color: var(--border); }
+        :root[data-carino-theme="color"] .qv-dialog .rp-go:disabled { border-color: var(--border); color: var(--text-muted); }
+        :root[data-carino-theme="color"] .qv-dialog .btn-ghost:focus-visible,
+        :root[data-carino-theme="color"] .qv-x:focus-visible,
+        :root[data-carino-theme="color"] .qv-go:focus-visible,
+        :root[data-carino-theme="color"] .qv-act:focus-visible { outline-color: var(--accent); }
+
+        /* Data… and Watch… (styles injected by js/cve-data-ui.js, js/cve-watch.js) */
+        :root[data-carino-theme="color"] #dataDialog .dd-k,
+        :root[data-carino-theme="color"] #dataDialog .dd-v small,
+        :root[data-carino-theme="color"] #dataDialog .dd-age,
+        :root[data-carino-theme="color"] #dataDialog .dd-tier small,
+        :root[data-carino-theme="color"] #watchDialog .cw-name small,
+        :root[data-carino-theme="color"] #watchDialog .cw-stamp dt,
+        :root[data-carino-theme="color"] #watchDialog .cw-match span { color: var(--text-muted); }
+        :root[data-carino-theme="color"] #dataDialog .dd-v,
+        :root[data-carino-theme="color"] #dataDialog .dd-tier b,
+        :root[data-carino-theme="color"] #watchDialog .cw-name b,
+        :root[data-carino-theme="color"] #watchDialog .cw-head-line,
+        :root[data-carino-theme="color"] #watchDialog .cw-match b { color: var(--text); }
+        :root[data-carino-theme="color"] #dataDialog .dd-warn,
+        :root[data-carino-theme="color"] #dataDialog .dd-note,
+        :root[data-carino-theme="color"] #watchDialog .cw-corpus,
+        :root[data-carino-theme="color"] #watchDialog .cw-stamp dd,
+        :root[data-carino-theme="color"] #watchDialog .cw-match p,
+        :root[data-carino-theme="color"] #watchDialog .cw-note { color: var(--text-sec); }
+        :root[data-carino-theme="color"] #dataDialog .dd-age.stale,
+        :root[data-carino-theme="color"] #dataDialog .dd-note.bad,
+        :root[data-carino-theme="color"] #watchDialog .cw-note.bad { color: var(--err); }
+        :root[data-carino-theme="color"] #watchDialog .cw-corpus.bad { border-left-color: var(--err); color: var(--err); }
+        :root[data-carino-theme="color"] #dataDialog .dd-tier,
+        :root[data-carino-theme="color"] #watchDialog .cw-report { background: var(--bg-elev); border-color: var(--border); }
+        :root[data-carino-theme="color"] #dataDialog .dd-tier:hover { border-color: var(--text-muted); }
+        :root[data-carino-theme="color"] #dataDialog .dd-tier.on { border-color: var(--accent); background: var(--accent-faint); }
+        :root[data-carino-theme="color"] #dataDialog .dd-tier:focus-within { outline-color: var(--accent); }
+        :root[data-carino-theme="color"] #dataDialog .dd-warn { border-left-color: var(--warn); }
+        :root[data-carino-theme="color"] #dataDialog .dd-bar { background: var(--bg-elev); border-color: var(--border); }
+        :root[data-carino-theme="color"] #dataDialog .dd-bar span { background: var(--accent); }
+        :root[data-carino-theme="color"] #dataDialog .dd-primary { border-color: var(--accent) !important; color: var(--accent) !important; }
+        :root[data-carino-theme="color"] #dataDialog .dd-danger:hover,
+        :root[data-carino-theme="color"] #dataDialog .dd-danger.armed,
+        :root[data-carino-theme="color"] #watchDialog .cw-danger:hover,
+        :root[data-carino-theme="color"] #watchDialog .cw-danger.armed { border-color: var(--err) !important; color: var(--err) !important; }
+        :root[data-carino-theme="color"] #dataDialog .btn-ghost[disabled]:hover,
+        :root[data-carino-theme="color"] #watchDialog .btn-ghost[disabled]:hover { border-color: var(--border); color: var(--text-sec); }
+        :root[data-carino-theme="color"] #watchDialog .cw-corpus { border-left-color: var(--border); }
+        :root[data-carino-theme="color"] #watchDialog .cw-item:hover { background: var(--ct-hover); border-color: var(--border); }
+        :root[data-carino-theme="color"] #watchDialog .cw-match { background: var(--bg-card); border-color: var(--border); }
+
+        /* the dashboards: their own --o-* tokens, and the header over them */
+        :root[data-carino-theme="color"] .obs {
+            --o-bg: var(--bg); --o-elev: var(--bg-elev); --o-card: var(--bg-card);
+            --o-accent: var(--accent); --o-accent-faint: var(--accent-faint); --o-accent-glow: var(--accent-glow);
+            --o-border: var(--border); --o-hair: var(--border);
+            --o-text: var(--text); --o-text-sec: var(--text-sec); --o-text-muted: var(--text-muted);
+            --o-ok: var(--ok); --o-warn: var(--warn); --o-err: var(--err); --o-info: var(--info);
+            --o-hatch: color-mix(in srgb, var(--text) 16%, transparent); --o-proj: var(--text-muted);
+            scrollbar-color: var(--ct-scroll) transparent;
+        }
+        :root[data-carino-theme="color"] .obs ::-webkit-scrollbar-thumb,
+        :root[data-carino-theme="color"] .obs ::-webkit-scrollbar-thumb:hover { background: var(--ct-scroll); }
+        :root[data-carino-theme="color"] .results-area.is-obs,
+        :root[data-carino-theme="color"] .results-area.is-obs .results-header { background: var(--bg); border-color: var(--border); }
+        :root[data-carino-theme="color"] .results-area.is-obs .mode-seg { background: var(--bg-card); border-color: var(--border); }
+        :root[data-carino-theme="color"] .results-area.is-obs .mode-seg .seg-btn { color: var(--text-sec); }
+        :root[data-carino-theme="color"] .results-area.is-obs .mode-seg .seg-btn + .seg-btn { border-left-color: var(--border); }
+        :root[data-carino-theme="color"] .results-area.is-obs .mode-seg .seg-btn:hover,
+        :root[data-carino-theme="color"] .results-area.is-obs .mode-seg .seg-btn[aria-pressed="true"] { color: var(--accent); }
+        :root[data-carino-theme="color"] .results-area.is-obs .mode-seg .seg-btn:focus-visible { outline-color: var(--accent); }
+        :root[data-carino-theme="color"] .results-area.is-obs .mode-seg .seg-btn.is-busy::before { background: var(--border); }
+        :root[data-carino-theme="color"] #obsRoot { color: var(--text-sec); }
+        /* the panel label, not carino-ui's faint big numeral */
+        :root[data-carino-theme="color"] .obs .panel-num { color: var(--accent); }
+        :root[data-carino-theme="color"] #obsRoot > .o-loading,
+        :root[data-carino-theme="color"] .obs .nline.o-hint,
+        :root[data-carino-theme="color"] .obs .stamp { color: var(--text-muted); }
+        :root[data-carino-theme="color"] .obs .legend i.hollow { border-color: var(--text-muted); }
+        :root[data-carino-theme="color"] .obs .minibar { background: var(--bg-elev); }
+        :root[data-carino-theme="color"] .obs .mirrorbox input::placeholder { color: var(--text-muted); }
+        :root[data-carino-theme="color"] .obs .mirrorbox input:focus { box-shadow: 0 0 0 3px var(--accent-glow); }
+        :root[data-carino-theme="color"] .obs .skel { background: linear-gradient(90deg, var(--bg-elev), var(--border), var(--bg-elev)); }
+        :root[data-carino-theme="color"] .obs .delta.up { background: color-mix(in srgb, var(--ok) 10%, transparent); }
+        :root[data-carino-theme="color"] .obs .delta.down { background: color-mix(in srgb, var(--err) 10%, transparent); }
+        :root[data-carino-theme="color"] .obs .live-chip.live,
+        :root[data-carino-theme="color"] .o-chip.ok,
+        :root[data-carino-theme="color"] .o-chip.live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+        :root[data-carino-theme="color"] .o-chip.bad,
+        :root[data-carino-theme="color"] .o-chip.stale { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, transparent); }
+        :root[data-carino-theme="color"] .o-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+        :root[data-carino-theme="color"] .o-chip.info { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); }
+        :root[data-carino-theme="color"] .o-chip { color: var(--text-muted); border-color: var(--border); }
+        :root[data-carino-theme="color"] button.o-chip:hover,
+        :root[data-carino-theme="color"] button.o-chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+        :root[data-carino-theme="color"] button.o-chip[aria-pressed="true"] { background: var(--accent-faint); }
+        :root[data-carino-theme="color"] button.o-chip[aria-pressed="false"] { text-decoration-color: color-mix(in srgb, var(--text) 30%, transparent); }
+        :root[data-carino-theme="color"] .o-chipbar > a,
+        :root[data-carino-theme="color"] .o-chipbar > button { color: var(--text-sec); border-color: var(--border); }
+        :root[data-carino-theme="color"] .o-chipbar > a:hover,
+        :root[data-carino-theme="color"] .o-chipbar > button:hover,
+        :root[data-carino-theme="color"] .o-chipbar > a:focus-visible,
+        :root[data-carino-theme="color"] .o-chipbar > button:focus-visible,
+        :root[data-carino-theme="color"] .o-chipbar > [aria-current="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-faint); }
+        :root[data-carino-theme="color"] .o-toast { border-color: var(--border); border-left-color: var(--accent); background: var(--bg-card); color: var(--text); box-shadow: var(--ct-shadow-3); }
+        :root[data-carino-theme="color"] .obs .o-readout { background: var(--bg-card); box-shadow: var(--ct-shadow-3); }
+
+        /* chart ink: the grey axes, labels and tags drawn for black */
+        :root[data-carino-theme="color"] .obs .fig .ax { stroke: var(--border); }
+        :root[data-carino-theme="color"] .obs .fig .axl,
+        :root[data-carino-theme="color"] .obs .fig .xl,
+        :root[data-carino-theme="color"] .obs .o-rule-label { fill: var(--text-muted); }
+        :root[data-carino-theme="color"] .obs .fig .rl,
+        :root[data-carino-theme="color"] .obs .fig .vl { fill: var(--text-sec); }
+        :root[data-carino-theme="color"] .obs .fig .hollow { stroke: var(--text-muted); }
+        :root[data-carino-theme="color"] .obs .fig .ln.ref,
+        :root[data-carino-theme="color"] .obs .o-other,
+        :root[data-carino-theme="color"] .obs .o-rule { stroke: var(--text-muted); }
+        :root[data-carino-theme="color"] .obs .o-cross rect,
+        :root[data-carino-theme="color"] .obs rect.o-cross-tag { fill: var(--bg-elev); }
+        /* colours the charts set as attributes (CSS outranks a presentation
+           attribute, so these follow the switch without a redraw): the bar
+           tracks, the light-grey averages, the heatmap's ring and labels,
+           the settling hatch; and the gold series, which share their value
+           with the Medium band, take the one amber the scale has on white */
+        :root[data-carino-theme="color"] .obs [fill="#141414"] { fill: var(--bg-elev); }
+        :root[data-carino-theme="color"] .obs [stroke="#d4d4d4"] { stroke: var(--text-sec); }
+        :root[data-carino-theme="color"] .obs [fill="#d4d4d4"],
+        :root[data-carino-theme="color"] .obs text[fill="#cfcfcf"] { fill: var(--text-sec); }
+        :root[data-carino-theme="color"] .obs [stroke="#ffffff"] { stroke: var(--text); }
+        :root[data-carino-theme="color"] .obs [stroke="rgba(255,255,255,.14)"] { stroke: var(--o-hatch); }
+        :root[data-carino-theme="color"] .obs [fill="#eab308"] { fill: var(--ct-amber); }
+        :root[data-carino-theme="color"] .obs [stroke="#eab308"] { stroke: var(--ct-amber); }
+        :root[data-carino-theme="color"] .obs .legend i[style*="rgb(234, 179, 8)"] { background: var(--ct-amber) !important; }
+        :root[data-carino-theme="color"] .obs .legend i[style*="rgb(212, 212, 212)"] { background: var(--text-sec) !important; }
+        :root[data-carino-theme="color"] .obs [style*="color: rgb(163, 163, 163)"] { color: var(--text-sec) !important; }
+    </style>
 </head>
 <body>
 
@@ -2636,6 +2852,7 @@ window.cveApplyListFilters = function (f) {
      by CveModes behind the list, after its first search has settled. -->
 <script src="js/cve-modes.js" defer></script>
 <script src="carino-navbar.js" data-app="CVE" data-repo="CVE" defer></script>
+<script src="carino-theme.js" data-mark="logo.svg" data-mark-color="logo-color.svg" defer></script>
 <script src="carino-ui.js" defer></script>
 <script src="carino-lang.js" defer></script>
 <script src="i18n.js" defer></script>
