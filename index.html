@@ -183,8 +183,8 @@
         :root[data-carino-theme="color"] .results-area.is-obs .mode-seg .seg-btn:focus-visible { outline-color: var(--accent); }
         :root[data-carino-theme="color"] .results-area.is-obs .mode-seg .seg-btn.is-busy::before { background: var(--border); }
         :root[data-carino-theme="color"] #obsRoot { color: var(--text-sec); }
-        /* the panel label, not carino-ui's faint big numeral */
-        :root[data-carino-theme="color"] .obs .panel-num { color: var(--accent); }
+        /* the panel label, not carino-ui's faint big numeral; one identity hue (severity owns red/amber/green, the tabs own blue) */
+        :root[data-carino-theme="color"] .obs details.o-panel > summary .panel-num { color: var(--ct-purple); }
         :root[data-carino-theme="color"] #obsRoot > .o-loading,
         :root[data-carino-theme="color"] .obs .nline.o-hint,
         :root[data-carino-theme="color"] .obs .stamp { color: var(--text-muted); }
