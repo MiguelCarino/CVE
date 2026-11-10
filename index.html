@@ -435,7 +435,7 @@
                 <h2 id="rpTitle" data-i18n>Report</h2>
                 <button type="button" class="qv-x" id="rpClose" aria-label="Close">&times;</button>
             </div>
-            <p class="qv-sub" data-i18n>Pick the sections to include. The report opens in a new tab, ready to print or save as PDF.</p>
+            <p class="qv-sub" data-i18n>Pick the sections to include. The report opens in a preview, ready to print or save as PDF.</p>
             <div id="rpGroups" class="rp-groups"></div>
             <p class="rp-why" id="rpWhy" role="status"></p>
             <div class="qv-foot">
@@ -2261,15 +2261,18 @@ function obsCssText() {
     catch (e) { return ''; }
 }
 
+// The report opens in a preview (js/cve-preview.js) of the very document
+// that prints: Print / Save as PDF prints that frame, Download HTML saves the
+// same document as a standalone file, and Close keeps nothing.
 async function openReport() {
     const search = document.getElementById('rpSearch');
     const withSearch = !!(search && search.checked && !reportBlocker());
     const withRecords = withSearch && document.getElementById('rpRecords').checked;
     const picked = rpSections.filter((s) => s.box.checked);
     if (!withSearch && !picked.length) return rpSync();
-    // Synchronous, inside the click: anything after an await is a pop-up.
-    const tab = CveReport.openTab();
     document.getElementById('reportDialog').close();
+    const status = document.getElementById('apiStatus');
+    const before = status ? status.textContent : '';
     setStatus(t_('Building report…'));
     await tick();
     try {
@@ -2285,12 +2288,23 @@ async function openReport() {
         const name = input
             ? CveReport.fileStem(input, 'report') + (modes.length ? '-' + modes.join('-') : '') + '.html'
             : 'cve-report-' + modes.join('-') + '-' + CveReport.todayISO(new Date()) + '.html';
-        const r = CveReport.deliver(tab, html, name);
-        report(r && r.opened ? t_('Report opened in a new tab.')
-            : t_('Pop-ups are blocked, so the report was downloaded instead.'));
+        setStatus(before);
+        const opened = window.CvePreview && CvePreview.open({
+            html, name, back: document.getElementById('exportMenuBtn'),
+            primary: 'print', secondary: 'download',
+            save: (h, n) => {
+                const ok = CveReport.save(n, 'text/html;charset=utf-8', [h]);
+                if (ok !== true) report(tf('This browser would not save the file: %1', ok));
+            },
+        });
+        if (opened) { exportOutcome = ''; syncExportMenu(); }
+        // No preview module: the file, as the pop-up-blocked path always did.
+        else {
+            const ok = CveReport.save(name, 'text/html;charset=utf-8', [html]);
+            if (ok !== true) report(tf('This browser would not save the file: %1', ok));
+        }
     } catch (e) {
         console.error(e);
-        try { if (tab) tab.close(); } catch (e2) { /* gone */ }
         report(t_('Could not build the report.'));
     }
 }
@@ -2859,6 +2873,8 @@ window.cveApplyListFilters = function (f) {
 <!-- The report builder comes before cve-watch, which borrows its fileSlug. -->
 <script src="js/cve-report.js" defer></script>
 <script src="js/cve-watch.js" defer></script>
+<!-- The report preview: every printable report is shown before it is handed over. -->
+<script src="js/cve-preview.js" defer></script>
 <!-- The mode switch. Everything the three dashboard modes need is injected
      by CveModes behind the list, after its first search has settled. -->
 <script src="js/cve-modes.js" defer></script>

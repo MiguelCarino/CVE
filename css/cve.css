@@ -246,6 +246,23 @@ a.pill:hover, a.pill:focus-visible { border-color: var(--accent); color: var(--a
 .qv-dialog .rp-go { margin-left: auto; border-color: #eab308; color: #eab308; }
 .qv-dialog .rp-go:disabled { border-color: #262626; color: #555; cursor: default; }
 
+/* --- Report preview (js/cve-preview.js): the shared .rpv layout from
+       carino-ui.css (18b). Only what is ours stays here: the scrim is a
+       <dialog> (shown below the navbar over the page, modal over the
+       Watchlist dialog), so the browser's dialog box and backdrop are undone;
+       and the frame is scaled, not reflowed, so the stage clips instead of
+       scrolling sideways. --- */
+dialog.rpv-scrim { width: auto; height: auto; max-width: none; max-height: none; margin: 0; border: 0; color: var(--text); }
+dialog.rpv-scrim:not([open]) { display: none; }
+dialog.rpv-scrim::backdrop { background: transparent; }
+.pv-stage { overflow: hidden; }
+.pv-frame { margin: 0 auto; max-width: none; }
+/* Phones: the two buttons share one row; the fleet .btn's 16 px padding and
+   wide tracking break "Print / Save as PDF" onto two lines at 360 px. */
+@media (max-width: 700px) {
+    .pv-dialog .rpv-actions .btn { padding: 0 8px; letter-spacing: 0.02em; line-height: 1.2; }
+}
+
 /* --- Modes: List · Trends · Projection · Observatory (js/cve-modes.js).
        The switch sits on the header and stays there in every mode. --- */
 .mode-seg { display: inline-flex; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-card); }

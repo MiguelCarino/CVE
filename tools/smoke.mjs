@@ -490,6 +490,11 @@ function realErrors(page, origin) {
         const local = e.url.startsWith(origin);
         if (e.kind === 'log:network' && !local) return true;
         if (e.kind === 'log:network' && /\/favicon\.ico$/.test(e.url)) return true;
+        // The harness's own PROBE (addScriptToEvaluateOnNewDocument) is
+        // injected into every frame, the report preview's script-less
+        // sandboxed frame too, and Chromium logs the refusal. The page itself
+        // runs nothing there, and without the probe nothing is logged.
+        if (e.kind === 'log:security' && /^Blocked script execution in 'about:(blank|srcdoc)' because the document's frame is sandboxed/.test(e.text)) return true;
         return e.kind === 'console' && /nvd\.nist\.gov|Failed to fetch|NetworkError|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|cve-data\.carino\.systems/i.test(e.text);
     };
     if (VERBOSE) {
@@ -1262,7 +1267,7 @@ async function main() {
 
         /* 18. Export ▾ ------------------------------------------------------- */
         // No timing here: only what the menu offers when, and what it hands over.
-        await step(18, 'Export ▾: off while searching and before a search; Report… picks sections, lists the CVEs only when asked, and opens in a tab with its CSP and footer; a dashboard section goes in as a copy; CSV and JSON names; dashboards say what is covered; Esc, Filters and Quick views still work', async (expect) => {
+        await step(18, 'Export ▾: off while searching and before a search; Report… picks sections, lists the CVEs only when asked, and opens in a preview (Print prints the frame, Download HTML saves the same file, Close saves nothing) with its CSP and footer; a dashboard section goes in as a copy; CSV and JSON names; dashboards say what is covered; Esc, Filters and Quick views still work', async (expect) => {
             const page = await boot('/index.html' + withQ(), { nvdMs: SLOW_NVD_MS });
             const key = async (k, code, vk) => {
                 await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk });
@@ -1301,10 +1306,12 @@ async function main() {
                 expect(!/CSV and JSON cover the last List search/.test(m.why), 'the dashboard note shows in the List');
                 await key('Escape', 'Escape', 27);
 
-                // The report: a tab the page opens synchronously, then fills.
-                await page.eval(`(function(){window.__rep={};window.open=function(){return {closed:false,
-                    location:{replace:function(u){window.__rep.url=u;}},document:{URL:'',readyState:'loading'},
-                    close:function(){window.__rep.closed=true;},print:function(){}};};})()`);
+                // The report: a preview of the very document that prints or saves.
+                await page.eval('window.__opened=0;window.open=function(){window.__opened++;return null;}');
+                const pvReady = `(function(){var d=document.getElementById('previewDialog'),g=document.getElementById('pvGo');
+                    return !!(d&&d.open&&g&&!g.disabled);})()`;
+                const pvDoc = "document.getElementById('pvFrame').srcdoc";
+                const pvOpen = "!!(document.getElementById('previewDialog')||{}).open";
                 const dlg = `(function(){var d=document.getElementById('reportDialog'),s=document.getElementById('rpSearch'),r=document.getElementById('rpRecords');
                     return {open:d.open,search:!!(s&&s.checked&&!s.disabled),records:!!(r&&r.checked),
                         dash:[].map.call(document.querySelectorAll('#rpGroups input[id^="rp-"]'),function(b){return b.id+(b.checked?'+':'');})};})()`;
@@ -1312,16 +1319,35 @@ async function main() {
                 let dm = await page.eval(dlg);
                 expect(dm.open && dm.search && !dm.records, 'Report… in the List: ' + JSON.stringify(dm));
                 await page.click('#rpOpen');
-                await page.waitFor('!!(window.__rep && __rep.url)', DRAW_MS, 'the report handed to the tab');
-                const lean = await page.eval('fetch(__rep.url).then(function(r){return r.text();})');
+                await page.waitFor(pvReady, DRAW_MS, 'the report preview');
+                const lean = await page.eval(pvDoc);
                 expect(lean.includes('<h2>Summary</h2>') && !lean.includes('<table class="records">'), 'the CVEs are listed although not asked for');
+                expect(/About \d+ pages? \(A4\)/.test(await page.eval(textOf('#pvStatus'))), 'preview status: ' + await page.eval(textOf('#pvStatus')));
+                expect(/^cve-.+\.html$/.test(await page.eval(textOf('#pvName'))), 'preview file name: ' + await page.eval(textOf('#pvName')));
+                expect(await page.eval('__opened') === 0, 'a tab was opened for the report');
+                // Print prints the frame and leaves the preview open.
+                await page.eval("window.__printed=0;document.getElementById('pvFrame').contentWindow.print=function(){window.__printed++;}");
+                await page.click('#pvGo');
+                expect(await page.eval('__printed') === 1 && await page.eval(pvOpen), 'Print did not print the preview frame, or closed it');
+                // Close (Esc) keeps nothing.
+                const dl0 = await page.eval('__dl.length');
+                await key('Escape', 'Escape', 27);
+                expect(!(await page.eval(pvOpen)) && await page.eval('__dl.length') === dl0, 'Esc did not close the preview, or saved a file');
+                expect(await page.eval("document.activeElement && document.activeElement.id") === 'exportMenuBtn', 'focus did not go back to Export ▾');
                 // Asked for: at most the cap, never the whole list.
-                await page.eval('window.__rep={}');
                 await page.click('#reportBtn');
                 await page.click('#rpRecords');
                 await page.click('#rpOpen');
-                await page.waitFor('!!(window.__rep && __rep.url)', DRAW_MS, 'the report with records');
-                const html = await page.eval('fetch(__rep.url).then(function(r){return r.text();})');
+                await page.waitFor(pvReady, DRAW_MS, 'the report with records');
+                const shownDoc = await page.eval(pvDoc);
+                // Download HTML: the preview closes and the file is the report as built.
+                await page.click('#pvSecond');
+                await page.waitFor('__dl.length > ' + dl0, DRAW_MS, 'the report download');
+                expect(!(await page.eval(pvOpen)), 'Download HTML left the preview open');
+                const repDl = await page.eval('__dl[__dl.length - 1]');
+                expect(/^cve-.+\.html$/.test(repDl.name), 'report file name: ' + repDl.name);
+                const html = await page.eval('fetch(__dl[__dl.length - 1].href).then(function(r){return r.text();})');
+                expect(shownDoc.includes(html.slice(html.indexOf('<body>'))), 'the preview does not show the saved document');
                 const recRows = (html.split('<table class="records">')[1] || '').split('</table>')[0].split('<tr>').length - 2;
                 expect(recRows > 0 && recRows <= 200, 'records in the report: ' + recRows);
                 const head = html.slice(0, html.indexOf('<style'));
@@ -1331,20 +1357,20 @@ async function main() {
                 expect(html.includes('Not a risk score, not a vulnerability assessment.'), 'report footer lacks the disclaimer');
                 expect(html.includes('Monitoring only, not advice.'), 'report footer lacks "Monitoring only"');
                 expect(html.includes('not endorsed or certified by the NVD'), 'report footer lacks the NVD attribution');
-                expect(/Report opened in a new tab/.test(await page.eval(textOf('#apiStatus'))), 'status after the report: ' + await page.eval(textOf('#apiStatus')));
 
                 // CSV and JSON: stamped names, every row, English.
+                const dlBase = await page.eval('__dl.length');
                 await page.click('#exportCsv');
-                await page.waitFor('__dl.length >= 1', DRAW_MS, 'the CSV download');
+                await page.waitFor('__dl.length >= ' + (dlBase + 1), DRAW_MS, 'the CSV download');
                 await page.click('#exportJson');
-                await page.waitFor('__dl.length >= 2', DRAW_MS, 'the JSON download');
-                const dl = await page.eval('__dl');
+                await page.waitFor('__dl.length >= ' + (dlBase + 2), DRAW_MS, 'the JSON download');
+                const dl = (await page.eval('__dl')).slice(dlBase);
                 expect(/^cve-[^/]+-\d{4}-\d{2}-\d{2}\.csv$/.test(dl[0].name), 'CSV name: ' + dl[0].name);
                 expect(/^cve-[^/]+-\d{4}-\d{2}-\d{2}\.json$/.test(dl[1].name), 'JSON name: ' + dl[1].name);
-                const csv = await page.eval('fetch(__dl[0].href).then(function(r){return r.text();})');
+                const csv = await page.eval('fetch(' + JSON.stringify(dl[0].href) + ').then(function(r){return r.text();})');
                 expect(/^﻿?id,published,/.test(csv) && /\r\n/.test(csv), 'CSV header/line endings: ' + JSON.stringify(csv.slice(0, 60)));
                 const listed = await page.eval('shown.length');
-                const json = JSON.parse(await page.eval('fetch(__dl[1].href).then(function(r){return r.text();})'));
+                const json = JSON.parse(await page.eval('fetch(' + JSON.stringify(dl[1].href) + ').then(function(r){return r.text();})'));
                 expect(json.report === 'carino-cve-search' && Array.isArray(json.results) && json.results.length === listed,
                     'JSON: report=' + json.report + ', results ' + (json.results && json.results.length) + ' of ' + listed);
                 expect(json.source !== 'NVD CVE API 2.0', 'JSON source is the old hardcoded string');
@@ -1361,10 +1387,11 @@ async function main() {
                 await page.click('#reportBtn');
                 dm = await page.eval(dlg);
                 expect(dm.open && !dm.search && dm.dash.some((x) => /^rp-trends-.*\+$/.test(x)), 'Report… in Trends: ' + JSON.stringify(dm));
-                await page.eval('window.__rep={}');
                 await page.click('#rpOpen');
-                await page.waitFor('!!(window.__rep && __rep.url)', DRAW_MS, 'the Trends report');
-                const dash = await page.eval('fetch(__rep.url).then(function(r){return r.text();})');
+                await page.waitFor(pvReady, DRAW_MS, 'the Trends report preview');
+                const dash = await page.eval(pvDoc);
+                await page.click('#pvClose');
+                expect(!(await page.eval(pvOpen)), 'Close did not close the Trends preview');
                 // Only the copied sections: the report's own Print button is outside them.
                 const copy = dash.slice(dash.indexOf('<div class="obs">'), dash.indexOf('<footer>'));
                 expect(copy.startsWith('<div class="obs"><section') && !/<script|<button|<input/i.test(copy) && !/<script/i.test(dash),
