@@ -1312,18 +1312,22 @@ async function main() {
                     return !!(d&&d.open&&g&&!g.disabled);})()`;
                 const pvDoc = "document.getElementById('pvFrame').srcdoc";
                 const pvOpen = "!!(document.getElementById('previewDialog')||{}).open";
-                const dlg = `(function(){var d=document.getElementById('reportDialog'),s=document.getElementById('rpSearch'),r=document.getElementById('rpRecords');
-                    return {open:d.open,search:!!(s&&s.checked&&!s.disabled),records:!!(r&&r.checked),
+                const dlg = `(function(){var d=document.getElementById('previewDialog'),o=document.getElementById('pvOpts'),s=document.getElementById('rpSearch'),r=document.getElementById('rpRecords');
+                    return {open:!!(d&&d.open&&o&&o.contains(document.getElementById('rpGroups'))),search:!!(s&&s.checked&&!s.disabled),records:!!(r&&r.checked),
                         dash:[].map.call(document.querySelectorAll('#rpGroups input[id^="rp-"]'),function(b){return b.id+(b.checked?'+':'');})};})()`;
                 await page.click('#reportBtn');
-                let dm = await page.eval(dlg);
-                expect(dm.open && dm.search && !dm.records, 'Report… in the List: ' + JSON.stringify(dm));
-                await page.click('#rpOpen');
                 await page.waitFor(pvReady, DRAW_MS, 'the report preview');
+                let dm = await page.eval(dlg);
+                expect(dm.open && dm.search && !dm.records, 'Report… in the List: the picker is not in the preview: ' + JSON.stringify(dm));
                 const lean = await page.eval(pvDoc);
                 expect(lean.includes('<h2>Summary</h2>') && !lean.includes('<table class="records">'), 'the CVEs are listed although not asked for');
                 expect(/About \d+ pages? \(A4\)/.test(await page.eval(textOf('#pvStatus'))), 'preview status: ' + await page.eval(textOf('#pvStatus')));
-                expect(/^cve-.+\.html$/.test(await page.eval(textOf('#pvName'))), 'preview file name: ' + await page.eval(textOf('#pvName')));
+                // File  PDF | HTML: above the name, outside the options; PDF on a first visit.
+                const fmt = await page.eval(`(function(){var f=document.querySelector('#previewDialog .rpv-format'),n=document.getElementById('pvName');
+                    return {ok:!!(f&&f.nextElementSibling===n&&!document.getElementById('pvOpts').contains(f)),
+                        on:(f&&f.querySelector('[aria-checked="true"]')||{}).textContent,dl:document.getElementById('pvSecond').textContent};})()`);
+                expect(fmt.ok && fmt.on === 'PDF' && fmt.dl === 'Download PDF', 'the File switch: ' + JSON.stringify(fmt));
+                expect(/^cve-.+\.pdf$/.test(await page.eval(textOf('#pvName'))), 'preview file name: ' + await page.eval(textOf('#pvName')));
                 expect(await page.eval('__opened') === 0, 'a tab was opened for the report');
                 // Print prints the frame and leaves the preview open.
                 await page.eval("window.__printed=0;document.getElementById('pvFrame').contentWindow.print=function(){window.__printed++;}");
@@ -1336,11 +1340,25 @@ async function main() {
                 expect(await page.eval("document.activeElement && document.activeElement.id") === 'exportMenuBtn', 'focus did not go back to Export ▾');
                 // Asked for: at most the cap, never the whole list.
                 await page.click('#reportBtn');
+                await page.waitFor(pvReady, DRAW_MS, 'the report preview, again');
+                // A box changed in the column redraws the report in place.
+                await page.eval("document.getElementById('rpRecords').focus()");
                 await page.click('#rpRecords');
-                await page.click('#rpOpen');
-                await page.waitFor(pvReady, DRAW_MS, 'the report with records');
+                await page.waitFor(pvReady + " && document.getElementById('pvFrame').srcdoc.includes('<table class=\"records\">')", DRAW_MS, 'the report redrawn with records');
+                expect(await page.eval("document.activeElement && document.activeElement.id") === 'rpRecords', 'the redraw took focus from the box');
+                // Nothing ticked: no document, no buttons, and it says why.
+                await page.click('#rpSearch');
+                await page.waitFor("document.getElementById('pvFrame').hidden", DRAW_MS, 'the empty report');
+                expect(await page.eval("document.getElementById('pvGo').disabled && document.getElementById('pvSecond').disabled"), 'Print/Download enabled with nothing picked');
+                expect(/Pick at least one section/.test(await page.eval(textOf('#pvStatus'))), 'empty status: ' + await page.eval(textOf('#pvStatus')));
+                await page.click('#rpSearch');
+                await page.click('#rpRecords');
+                await page.waitFor(pvReady + " && !document.getElementById('pvFrame').hidden && document.getElementById('pvFrame').srcdoc.includes('<table class=\"records\">')", DRAW_MS, 'the report back with records');
                 const shownDoc = await page.eval(pvDoc);
                 // Download HTML: the preview closes and the file is the report as built.
+                await page.eval("document.querySelector('#previewDialog .rpv-format [data-format=\"html\"]').click()");
+                expect(await page.eval(textOf('#pvSecond')) === 'Download HTML' && /^cve-.+\.html$/.test(await page.eval(textOf('#pvName'))),
+                    'HTML picked: ' + await page.eval(textOf('#pvSecond')) + ' / ' + await page.eval(textOf('#pvName')));
                 await page.click('#pvSecond');
                 await page.waitFor('__dl.length > ' + dl0, DRAW_MS, 'the report download');
                 expect(!(await page.eval(pvOpen)), 'Download HTML left the preview open');
@@ -1385,10 +1403,9 @@ async function main() {
                 // Report… in Trends: its sections are offered, the one in view
                 // is ticked and the search is not; the copy is a section, not a script.
                 await page.click('#reportBtn');
+                await page.waitFor(pvReady, DRAW_MS, 'the Trends report preview');
                 dm = await page.eval(dlg);
                 expect(dm.open && !dm.search && dm.dash.some((x) => /^rp-trends-.*\+$/.test(x)), 'Report… in Trends: ' + JSON.stringify(dm));
-                await page.click('#rpOpen');
-                await page.waitFor(pvReady, DRAW_MS, 'the Trends report preview');
                 const dash = await page.eval(pvDoc);
                 await page.click('#pvClose');
                 expect(!(await page.eval(pvOpen)), 'Close did not close the Trends preview');

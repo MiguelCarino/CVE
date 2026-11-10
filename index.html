@@ -78,7 +78,7 @@
         :root[data-carino-theme="color"] .coverage { border-color: var(--accent-dim); background: var(--accent-faint); color: var(--accent); }
         :root[data-carino-theme="color"] .controls .refine .chk input[type="checkbox"],
         :root[data-carino-theme="color"] .controls .sev-extra input[type="checkbox"],
-        :root[data-carino-theme="color"] .qv-dialog .rp-item input[type="checkbox"],
+        :root[data-carino-theme="color"] .rp-item input[type="checkbox"],
         :root[data-carino-theme="color"] #dataDialog .dd-tier input { accent-color: var(--accent); }
         :root[data-carino-theme="color"] .link-btn:hover { color: var(--ct-accent-strong); }
         :root[data-carino-theme="color"] .mode-note { box-shadow: var(--ct-shadow-2); }
@@ -93,7 +93,6 @@
         :root[data-carino-theme="color"] .qv-dialog .btn-ghost { border-color: var(--border); color: var(--text-sec); }
         :root[data-carino-theme="color"] .qv-x:hover,
         :root[data-carino-theme="color"] .qv-dialog .btn-ghost:hover,
-        :root[data-carino-theme="color"] .qv-dialog .rp-go { border-color: var(--accent); color: var(--accent); }
         :root[data-carino-theme="color"] .qv-dialog input { background: var(--bg-elev); border-color: var(--border); color: var(--text); }
         :root[data-carino-theme="color"] .qv-dialog input::placeholder { color: var(--text-muted); }
         :root[data-carino-theme="color"] .qv-dialog input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
@@ -111,9 +110,7 @@
         :root[data-carino-theme="color"] .rp-item:hover { background: var(--ct-hover); }
         :root[data-carino-theme="color"] .qv-act:hover,
         :root[data-carino-theme="color"] .qv-act.on,
-        :root[data-carino-theme="color"] .rp-why { color: var(--accent); }
         :root[data-carino-theme="color"] .qv-foot { border-top-color: var(--border); }
-        :root[data-carino-theme="color"] .qv-dialog .rp-go:disabled { border-color: var(--border); color: var(--text-muted); }
         :root[data-carino-theme="color"] .qv-dialog .btn-ghost:focus-visible,
         :root[data-carino-theme="color"] .qv-x:focus-visible,
         :root[data-carino-theme="color"] .qv-go:focus-visible,
@@ -270,7 +267,7 @@
              title is the provenance line the rail used to carry. -->
         <button type="button" class="cs-btn" id="dataBtn" data-priority="2"><span aria-hidden="true">⛁</span> <span class="mb-t" data-i18n>Data</span></button>
         <!-- Export ▾ (carino-ui.js opens and closes it). Report… opens
-             #reportDialog, where the sections are picked: the last List search
+             the report preview, where the sections are picked: the last List search
              and any Trends, Projection or Observatory section. CSV and JSON
              cover the last List search; syncExportMenu() disables them, with
              the reason in #exportWhy, until there is a finished search. -->
@@ -426,24 +423,6 @@
             </section>
         </div>
     </div>
-
-    <!-- Report… — which sections go into the printable report. The groups
-         are drawn by openReportDialog() from what the page holds right now. -->
-    <dialog id="reportDialog" class="qv-dialog rp-dialog" aria-labelledby="rpTitle">
-        <div class="qv-inner">
-            <div class="qv-head">
-                <h2 id="rpTitle" data-i18n>Report</h2>
-                <button type="button" class="qv-x" id="rpClose" aria-label="Close">&times;</button>
-            </div>
-            <p class="qv-sub" data-i18n>Pick the sections to include. The report opens in a preview, ready to print or save as PDF.</p>
-            <div id="rpGroups" class="rp-groups"></div>
-            <p class="rp-why" id="rpWhy" role="status"></p>
-            <div class="qv-foot">
-                <button type="button" class="btn-ghost" id="rpCancel" data-i18n>Cancel</button>
-                <button type="button" class="btn-ghost rp-go" id="rpOpen"><span aria-hidden="true">📋</span> <span data-i18n>Open report</span></button>
-            </div>
-        </div>
-    </dialog>
 
     <dialog id="viewsDialog" class="qv-dialog">
         <div class="qv-inner">
@@ -2110,13 +2089,14 @@ function syncExportMenu() {
 
 /* ---- Report… — the report by section ---------------------------------
 
-   One dialog picks what goes in: the last List search (its settings,
+   The report preview picks what goes in, in its left column: the last List search (its settings,
    provenance and summary, and the CVEs themselves only when asked — the
    first REPORT_ROW_CAP, never the whole list) and any section of Trends,
    Projection or Observatory that has been built. A dashboard section is
    copied from the page as drawn (CveReport.sectionHtml), so the paper shows
-   the range and view on screen. The dialog opens with the section in view
-   ticked: the search on the List, the current section on a dashboard. */
+   the range and view on screen. It opens with the section in view ticked
+   (the search on the List, the current section on a dashboard) and draws
+   the report again whenever a box changes. */
 
 const REPORT_MODES = [
     { id: 'trends', host: 'obsTrends', label: () => t_('Trends') },
@@ -2176,32 +2156,37 @@ function rpGroup(title) {
     return fs;
 }
 
-let rpSections = [];   // [{box, mode, label, node}] while the dialog is open
+let rpSections = [];   // [{box, mode, label, node}] while the preview is open
+let rpHost = null;     // the picker, shown in the preview's column
+let rpTimer = 0;
 
 function rpSync() {
-    const search = document.getElementById('rpSearch');
-    const rec = document.getElementById('rpRecords');
+    const search = rpHost.querySelector('#rpSearch');
+    const rec = rpHost.querySelector('#rpRecords');
     if (rec) {
         rec.disabled = !search || !search.checked;
         if (rec.disabled) rec.checked = false;
     }
-    document.querySelectorAll('#rpGroups input[data-all]').forEach((all) => {
+    rpHost.querySelectorAll('input[data-all]').forEach((all) => {
         const mine = rpSections.filter((s) => s.mode === all.getAttribute('data-all'));
         const on = mine.filter((s) => s.box.checked).length;
         all.checked = on === mine.length && on > 0;
         all.indeterminate = on > 0 && on < mine.length;
     });
-    const any = (search && search.checked) || rpSections.some((s) => s.box.checked);
-    document.getElementById('rpOpen').disabled = !any;
-    document.getElementById('rpWhy').textContent = any ? '' : t_('Pick at least one section.');
+    // A run of clicks draws once, after the last.
+    clearTimeout(rpTimer);
+    rpTimer = setTimeout(() => openReport(true), 250);
 }
 
 function openReportDialog() {
-    const d = document.getElementById('reportDialog');
-    const host = document.getElementById('rpGroups');
+    if (!rpHost) {
+        rpHost = document.createElement('div');
+        rpHost.id = 'rpGroups';
+        rpHost.className = 'rp-groups';
+    }
+    const host = rpHost;
     host.textContent = '';
     rpSections = [];
-    document.getElementById('rpClose').setAttribute('aria-label', t_('Close'));
     const mode = window.CveModes ? CveModes.current() : 'list';
 
     // The last List search.
@@ -2250,7 +2235,8 @@ function openReportDialog() {
     });
     host.onchange = rpSync;
     rpSync();
-    if (!d.open) d.showModal();
+    clearTimeout(rpTimer);
+    openReport();
 }
 
 // The dashboards' stylesheet as text, for the copied sections. Same origin,
@@ -2262,19 +2248,32 @@ function obsCssText() {
 }
 
 // The report opens in a preview (js/cve-preview.js) of the very document
-// that prints: Print / Save as PDF prints that frame, Download HTML saves the
-// same document as a standalone file, and Close keeps nothing.
-async function openReport() {
-    const search = document.getElementById('rpSearch');
+// that prints, with the picker in its column: Print prints that frame,
+// Download saves it as the File switch says (HTML: the same document as a
+// standalone file, through save() below; PDF: drawn from it by carino-pdf.js),
+// and Close keeps nothing.
+const rpPreview = (extra) => Object.assign({
+    opts: rpHost, back: document.getElementById('exportMenuBtn'),
+    primary: 'print', secondary: 'download',
+    save: (h, n) => {
+        const ok = CveReport.save(n, 'text/html;charset=utf-8', [h]);
+        if (ok !== true) report(tf('This browser would not save the file: %1', ok));
+    },
+}, extra);
+
+async function openReport(redraw) {
+    clearTimeout(rpTimer);
+    // A redraw due after the preview closed (or gave way to another report):
+    // nothing to draw.
+    if (!rpHost || (redraw && !(window.CvePreview && CvePreview.isOpen() && rpHost.isConnected))) return;
+    const search = rpHost.querySelector('#rpSearch');
     const withSearch = !!(search && search.checked && !reportBlocker());
-    const withRecords = withSearch && document.getElementById('rpRecords').checked;
+    const withRecords = withSearch && rpHost.querySelector('#rpRecords').checked;
     const picked = rpSections.filter((s) => s.box.checked);
-    if (!withSearch && !picked.length) return rpSync();
-    document.getElementById('reportDialog').close();
-    const status = document.getElementById('apiStatus');
-    const before = status ? status.textContent : '';
-    setStatus(t_('Building report…'));
-    await tick();
+    if (!withSearch && !picked.length) {
+        if (window.CvePreview) CvePreview.open(rpPreview({ html: '', empty: t_('Pick at least one section.') }));
+        return;
+    }
     try {
         const lang = document.documentElement.lang || 'en';
         const input = withSearch ? reportInput({ tr: PAGE_TR, full: false }) : null;
@@ -2288,15 +2287,7 @@ async function openReport() {
         const name = input
             ? CveReport.fileStem(input, 'report') + (modes.length ? '-' + modes.join('-') : '') + '.html'
             : 'cve-report-' + modes.join('-') + '-' + CveReport.todayISO(new Date()) + '.html';
-        setStatus(before);
-        const opened = window.CvePreview && CvePreview.open({
-            html, name, back: document.getElementById('exportMenuBtn'),
-            primary: 'print', secondary: 'download',
-            save: (h, n) => {
-                const ok = CveReport.save(n, 'text/html;charset=utf-8', [h]);
-                if (ok !== true) report(tf('This browser would not save the file: %1', ok));
-            },
-        });
+        const opened = window.CvePreview && CvePreview.open(rpPreview({ html, name }));
         if (opened) { exportOutcome = ''; syncExportMenu(); }
         // No preview module: the file, as the pop-up-blocked path always did.
         else {
@@ -2753,9 +2744,6 @@ function wire() {
         }
     }, true);
     document.getElementById('reportBtn').addEventListener('click', openReportDialog);
-    document.getElementById('rpOpen').addEventListener('click', openReport);
-    ['rpClose', 'rpCancel'].forEach((id) => document.getElementById(id).addEventListener('click',
-        () => document.getElementById('reportDialog').close()));
     document.getElementById('exportCsv').addEventListener('click', () => saveSearchData('csv'));
     document.getElementById('exportJson').addEventListener('click', () => saveSearchData('json'));
     document.getElementById('watchReportBtn').addEventListener('click', () => {
@@ -2874,6 +2862,7 @@ window.cveApplyListFilters = function (f) {
 <script src="js/cve-report.js" defer></script>
 <script src="js/cve-watch.js" defer></script>
 <!-- The report preview: every printable report is shown before it is handed over. -->
+<script src="carino-pdf.js" defer></script>
 <script src="js/cve-preview.js" defer></script>
 <!-- The mode switch. Everything the three dashboard modes need is injected
      by CveModes behind the list, after its first search has settled. -->
